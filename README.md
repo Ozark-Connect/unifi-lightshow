@@ -113,7 +113,7 @@ The coordinator will SSH to each switch once on startup to ensure the daemon is 
 
 In SignalRGB, go to the WLED service and add a device by IP. Enter the IP where the coordinator's WLED port 80 is bound. SignalRGB will discover it as a WLED device with your configured LED count.
 
-> **Tip:** If you don't want to bind port 80 directly to the coordinator, you can use a reverse proxy (e.g., Nginx, Caddy) to expose port 80 to SignalRGB and route traffic to the coordinator's WLED listener.
+> **Tip:** If you don't want to bind port 80 directly to the coordinator, you can use a reverse proxy (e.g., Traefik, Nginx, Caddy) to expose port 80 to SignalRGB and route traffic to the coordinator's WLED listener.
 
 ## Built-in Effects
 
@@ -214,3 +214,7 @@ If you're looking for a UniFi security and performance optimization project, che
 ## License
 
 MIT
+
+---
+
+<sub>UniFi Lightshow is an independent project by Ozark Connect and is not affiliated with, endorsed by, or sponsored by Ubiquiti, Inc. Ubiquiti, UniFi, Etherlighting, and USW are trademarks or registered trademarks of Ubiquiti, Inc. All other trademarks are the property of their respective owners.</sub>
