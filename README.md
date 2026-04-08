@@ -2,6 +2,16 @@
 
 Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-Pro series). Overrides the built-in Etherlighting LEDs with custom effects, SignalRGB integration, and optional OpenRGB support for ARGB devices.
 
+## Demo
+
+<p align="center">
+  <img src="https://i.imgur.com/0A2wNVC.gif" width="270" alt="UniFi Lightshow demo 1">
+  <img src="https://i.imgur.com/EAy77CD.gif" width="270" alt="UniFi Lightshow demo 2">
+  <img src="https://i.imgur.com/etcdTmE.gif" width="270" alt="UniFi Lightshow demo 3">
+</p>
+
+<p align="center"><a href="https://imgur.com/a/unifi-lightshow-demo-IfBiL7b">More examples</a></p>
+
 ## What It Does
 
 - Takes over the per-port RGB LEDs on UniFi Pro switches
