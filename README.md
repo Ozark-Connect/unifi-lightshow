@@ -4,11 +4,11 @@ Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-P
 
 ## Demo
 
-<p align="center">
-  <img src="https://i.imgur.com/0A2wNVC.gif" width="270" alt="UniFi Lightshow demo 1">
-  <img src="https://i.imgur.com/EAy77CD.gif" width="270" alt="UniFi Lightshow demo 2">
-  <img src="https://i.imgur.com/etcdTmE.gif" width="270" alt="UniFi Lightshow demo 3">
-</p>
+<table align="center"><tr>
+<td><video src="https://github.com/user-attachments/assets/f5d61ce9-fd89-48a9-a06a-4edd02947344" width="270"></video></td>
+<td><video src="https://github.com/user-attachments/assets/b4fba078-164b-4933-b8a6-507352b8a392" width="270"></video></td>
+<td><video src="https://github.com/user-attachments/assets/d1ca276f-2917-4fd2-a309-3d68c77d6ce9" width="270"></video></td>
+</tr></table>
 
 <p align="center"><a href="https://imgur.com/a/unifi-lightshow-demo-IfBiL7b">More examples</a></p>
 
