@@ -1,0 +1,210 @@
+# UniFi Lightshow
+
+Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-Pro series). Overrides the built-in Etherlighting LEDs with custom effects, SignalRGB integration, and optional OpenRGB support for ARGB devices.
+
+## What It Does
+
+- Takes over the per-port RGB LEDs on UniFi Pro switches
+- Drives custom lighting effects across multiple switches as a unified spatial canvas
+- Emulates a WLED device so **SignalRGB** controls it natively — no custom plugin needed
+- Falls back to built-in effects (plasma waves, seasonal themes, time-of-day brightness) when SignalRGB isn't streaming
+- Optionally controls OpenRGB ARGB devices (motherboard LEDs, fans, etc.) on the same canvas
+- Exposes an HTTP API for Home Assistant integration
+
+## Architecture
+
+```
+SignalRGB (Windows)                    Home Assistant
+    |                                       |
+    WLED DNRGB UDP (:21324)                 HTTP REST API (:9199)
+    |                                       |
+    +--------------- NAS -------------------+
+    |        Coordinator (Docker)           |
+    |    Effects | Coalescer | WLED Emu     |
+    |              |                        |
+    |    UDP :9200 to each switch           |
+    +---------------------------------------+
+         |                    |
+    Switch 1              Switch 2           ...
+    etherlightd_udp       etherlightd_udp
+    (libubus C daemon)    (libubus C daemon)
+         |                    |
+    I2C → MCU → LEDs     I2C → MCU → LEDs
+```
+
+### How it's efficient
+
+The coordinator runs on a server/NAS and sends UDP color frames to lightweight C daemons deployed on each switch. These daemons call the `libubus` C API directly — no shell spawning, no fork/exec overhead. Result: **8fps at 90% switch CPU idle**.
+
+| Approach | CPU Idle | Load |
+|----------|----------|------|
+| SSH + shell commands @ 3fps | 36% | 1.6 |
+| libubus C daemon @ 8fps | **90%** | **0.86** |
+
+## Supported Hardware
+
+Tested on **USW-Pro-XG-8-PoE** (10 addressable RGB ports: 8 RJ45 + 2 SFP+). Should work on any UniFi switch with Etherlighting that uses the `ubus etherlight.mcu` interface.
+
+## Quick Start
+
+### 1. Configure
+
+Copy `coordinator/switches.example.json` to `coordinator/switches.json` and edit:
+
+```json
+{
+  "switches": [
+    {
+      "name": "my-switch",
+      "host": "192.168.1.10",
+      "user": "admin",
+      "num_ports": 10
+    }
+  ],
+  "wled_bind_ip": "0.0.0.0",
+  "wled_bind_port": 80,
+  "max_fps": 8,
+  "brightness": 100,
+  "udp_timeout": 5.0
+}
+```
+
+### 2. Build the switch daemon
+
+The on-switch daemon must be cross-compiled for MIPS soft-float (the switch's CPU architecture):
+
+```bash
+# Download musl cross-compiler
+wget -O /tmp/mips-musl.tgz 'https://musl.cc/mips-linux-muslsf-cross.tgz'
+tar xzf /tmp/mips-musl.tgz -C /tmp/
+
+# Build
+/tmp/mips-linux-muslsf-cross/bin/mips-linux-muslsf-gcc \
+    -O2 -Wl,--dynamic-linker=/lib/ld-musl-mips-sf.so.1 \
+    -Wl,--unresolved-symbols=ignore-all \
+    -o switch-daemon/etherlightd_udp switch-daemon/etherlightd_udp.c \
+    -Wl,-rpath,/lib
+```
+
+### 3. Deploy the switch daemon
+
+Copy the binary and startup script to each switch's persistent storage:
+
+```bash
+scp switch-daemon/etherlightd_udp admin@switch:/etc/persistent/
+scp switch-daemon/start_etherlightd_udp.sh admin@switch:/etc/persistent/
+ssh admin@switch "chmod +x /etc/persistent/etherlightd_udp /etc/persistent/start_etherlightd_udp.sh"
+ssh admin@switch "/etc/persistent/start_etherlightd_udp.sh"
+```
+
+The startup script sets up a cron job to auto-start the daemon after reboots.
+
+### 4. Start the coordinator
+
+```bash
+cd coordinator
+cp switches.example.json switches.json  # edit with your switch IPs
+docker compose up -d
+```
+
+The coordinator will SSH to each switch once on startup to ensure the daemon is running, then communicate via UDP.
+
+### 5. Connect SignalRGB
+
+In SignalRGB, go to the WLED service and add a device by IP. Enter the IP where the coordinator's WLED port 80 is bound. SignalRGB will discover it as a WLED device with your configured LED count.
+
+## Built-in Effects
+
+When SignalRGB isn't streaming, the coordinator runs fallback effects:
+
+| Effect | Description |
+|--------|-------------|
+| `plasma` | Plasma wave with seasonal colors and time-of-day brightness |
+| `rainbow` | Animated rainbow cycle across all devices |
+| `palette_cycle` | Smooth cycle through UniFi speed-mode colors |
+| `palette_sweep` | Each color sweeps across the canvas in sequence |
+| `sweep` | Band of color bounces back and forth |
+| `chase` | Single lit pixel with trailing dim pixel |
+| `breathe` | All ports pulse together |
+| `solid` | All ports one color |
+| `off` | All dark |
+
+### Seasonal themes (plasma effect)
+
+| Season | Dates | Colors |
+|--------|-------|--------|
+| Halloween | Oct 1 - Nov 1 | Orange & Purple |
+| Christmas | Nov 29 - Dec 26 | Green & Red |
+| New Year's | Dec 27 - Jan 2 | White & Blue |
+| Valentine's | Feb 7 - Feb 14 | Red & Pink |
+| St. Patrick's | Mar 14 - Mar 17 | Green & Light Green |
+| Default | Rest of year | Teal & Violet |
+
+### Time-of-day brightness (plasma effect)
+
+| Time | Brightness |
+|------|-----------|
+| 00:30 - 07:00 | OFF |
+| 07:00 - 08:00 | 50% |
+| 08:00 - 20:15 | 100% |
+| 20:15 - 23:00 | 75% |
+| 23:00 - 00:30 | 50% |
+
+## HTTP API
+
+```
+GET  /health               — status, fps, connected switches
+GET  /state                — current colors, active effect, active source
+POST /effect               — start an effect: {"effect": "plasma"}
+POST /control              — {"action": "stop"} to stop effects
+POST /port                 — set one port: {"port": 1, "r": 255, "g": 0, "b": 0}
+POST /ports                — set all ports: {"colors": [[255,0,0,0], ...]}
+```
+
+## Multi-Switch Spatial Canvas
+
+Multiple switches can be positioned on a 2D canvas. Effects render spatially — a rainbow sweep flows continuously across switches based on their physical position:
+
+```json
+{
+  "switches": [
+    {"name": "rack-top",    "host": "10.0.0.1", "x": 0,  "y": 0},
+    {"name": "rack-bottom", "host": "10.0.0.2", "x": 0,  "y": 1},
+    {"name": "desk",        "host": "10.0.0.3", "x": 10, "y": 0, "rotation": 180, "mirror": true}
+  ]
+}
+```
+
+## OpenRGB Integration
+
+Add an `openrgb` section to your config to include ARGB devices on the same canvas:
+
+```json
+{
+  "openrgb": {
+    "host": "127.0.0.1",
+    "port": 6742,
+    "name": "motherboard",
+    "num_leds": 8,
+    "x": 5.0,
+    "y": 2.0
+  }
+}
+```
+
+Requires OpenRGB running on the same host as the coordinator.
+
+## Important Notes
+
+- **Safe commands**: Only `port_rgb` and `behavior: steady` are used. These are safe and don't corrupt the switch's MCU state.
+- **Dangerous commands (avoided)**: `led_stop`, `port_pwm`, `reset: cold`, `mode_color`, `led_mode` — these can corrupt MCU state, kill LED output, or break I2C communication.
+- **Persistence**: The switch daemon survives reboots via cron. The coordinator runs as a Docker container with `restart: unless-stopped`.
+- **Firmware updates**: The daemon in `/etc/persistent/` survives firmware updates. The binary may need to be rebuilt if Ubiquiti changes the libubus ABI.
+
+## Research
+
+See [RESEARCH.md](RESEARCH.md) for detailed reverse-engineering findings of the Etherlighting system, I2C bus details, and the full ubus API documentation.
+
+## License
+
+MIT

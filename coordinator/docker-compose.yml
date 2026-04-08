@@ -1,0 +1,17 @@
+services:
+  etherlighting-coordinator:
+    build: .
+    container_name: etherlighting-coordinator
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /root/.ssh:/root/.ssh:ro
+      - ./switches.json:/app/switches.json:ro
+    environment:
+      - TZ=${TZ:-America/Chicago}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9199/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

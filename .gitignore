@@ -1,0 +1,6 @@
+switches.json
+__pycache__/
+*.pyc
+venv/
+.env
+*.bin

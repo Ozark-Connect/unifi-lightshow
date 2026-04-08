@@ -1,0 +1,26 @@
+{
+  "switches": [
+    {
+      "name": "switch-1",
+      "host": "192.168.1.10",
+      "user": "admin",
+      "num_ports": 10,
+      "x": 0.0,
+      "y": 0.0
+    }
+  ],
+  "openrgb": {
+    "host": "127.0.0.1",
+    "port": 6742,
+    "name": "openrgb",
+    "num_leds": 8,
+    "x": 5.0,
+    "y": 2.0,
+    "led_spacing": 1.0
+  },
+  "wled_bind_ip": "0.0.0.0",
+  "wled_bind_port": 80,
+  "max_fps": 8,
+  "brightness": 100,
+  "udp_timeout": 5.0
+}
