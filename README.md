@@ -6,7 +6,7 @@ Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-P
 
 - Takes over the per-port RGB LEDs on UniFi Pro switches
 - Drives custom lighting effects across multiple switches as a unified spatial canvas
-- Emulates a WLED device so **SignalRGB** controls it natively — no custom plugin needed
+- Emulates a WLED device so **SignalRGB** controls it natively - no custom plugin needed
 - Falls back to built-in effects (plasma waves, seasonal themes, time-of-day brightness) when SignalRGB isn't streaming
 - Optionally controls OpenRGB ARGB devices (motherboard LEDs, fans, etc.) on the same canvas
 - Exposes an HTTP API for Home Assistant integration
@@ -34,7 +34,7 @@ SignalRGB (Windows)                    Home Assistant
 
 ### How it's efficient
 
-The coordinator runs on a server/NAS and sends UDP color frames to lightweight C daemons deployed on each switch. These daemons call the `libubus` C API directly — no shell spawning, no fork/exec overhead. Result: **8fps at 90% switch CPU idle**.
+The coordinator runs on a server/NAS and sends UDP color frames to lightweight C daemons deployed on each switch. These daemons call the `libubus` C API directly - no shell spawning, no fork/exec overhead. Result: **8fps at 90% switch CPU idle**.
 
 | Approach | CPU Idle | Load |
 |----------|----------|------|
@@ -155,17 +155,17 @@ When SignalRGB isn't streaming, the coordinator runs fallback effects:
 ## HTTP API
 
 ```
-GET  /health               — status, fps, connected switches
-GET  /state                — current colors, active effect, active source
-POST /effect               — start an effect: {"effect": "plasma"}
-POST /control              — {"action": "stop"} to stop effects
-POST /port                 — set one port: {"port": 1, "r": 255, "g": 0, "b": 0}
-POST /ports                — set all ports: {"colors": [[255,0,0,0], ...]}
+GET  /health               - status, fps, connected switches
+GET  /state                - current colors, active effect, active source
+POST /effect               - start an effect: {"effect": "plasma"}
+POST /control              - {"action": "stop"} to stop effects
+POST /port                 - set one port: {"port": 1, "r": 255, "g": 0, "b": 0}
+POST /ports                - set all ports: {"colors": [[255,0,0,0], ...]}
 ```
 
 ## Multi-Switch Spatial Canvas
 
-Multiple switches can be positioned on a 2D canvas. Effects render spatially — a rainbow sweep flows continuously across switches based on their physical position:
+Multiple switches can be positioned on a 2D canvas. Effects render spatially - a rainbow sweep flows continuously across switches based on their physical position:
 
 ```json
 {
@@ -199,7 +199,7 @@ Requires OpenRGB running on the same host as the coordinator.
 ## Important Notes
 
 - **Safe commands**: Only `port_rgb` and `behavior: steady` are used. These are safe and don't corrupt the switch's MCU state.
-- **Dangerous commands (avoided)**: `led_stop`, `port_pwm`, `reset: cold`, `mode_color`, `led_mode` — these can corrupt MCU state, kill LED output, or break I2C communication.
+- **Dangerous commands (avoided)**: `led_stop`, `port_pwm`, `reset: cold`, `mode_color`, `led_mode` - these can corrupt MCU state, kill LED output, or break I2C communication.
 - **Persistence**: The switch daemon survives reboots via cron. The coordinator runs as a Docker container with `restart: unless-stopped`.
 - **Firmware updates**: The daemon in `/etc/persistent/` survives firmware updates. The binary may need to be rebuilt if Ubiquiti changes the libubus ABI.
 
