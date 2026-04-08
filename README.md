@@ -209,7 +209,7 @@ See [RESEARCH.md](RESEARCH.md) for detailed reverse-engineering findings of the 
 
 ## See Also
 
-If you're looking for a UniFi security and performance optimization project, check out [Network Optimizer](https://github.com/Ozark-Connect/NetworkOptimizer) — a full network auditing and optimization tool for UniFi environments.
+If you're looking for a UniFi security and performance optimization project, check out [Network Optimizer](https://github.com/Ozark-Connect/NetworkOptimizer) - a full network auditing and optimization tool for UniFi environments.
 
 ## License
 
