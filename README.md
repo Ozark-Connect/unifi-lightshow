@@ -71,7 +71,7 @@ Copy `coordinator/switches.example.json` to `coordinator/switches.json` and edit
 
 ### 2. Build the switch daemon
 
-The on-switch daemon must be cross-compiled for MIPS soft-float (the switch's CPU architecture):
+The on-switch daemon must be cross-compiled for MIPS soft-float (the switch's CPU architecture). Make sure this matches your particular Etherlighting switch's architecture. The research notes may be helpful in figuring that out if you're unsure.
 
 ```bash
 # Download musl cross-compiler
