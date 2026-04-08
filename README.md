@@ -113,6 +113,8 @@ The coordinator will SSH to each switch once on startup to ensure the daemon is 
 
 In SignalRGB, go to the WLED service and add a device by IP. Enter the IP where the coordinator's WLED port 80 is bound. SignalRGB will discover it as a WLED device with your configured LED count.
 
+> **Tip:** If you don't want to bind port 80 directly to the coordinator, you can use a reverse proxy (e.g., Nginx, Caddy) to expose port 80 to SignalRGB and route traffic to the coordinator's WLED listener.
+
 ## Built-in Effects
 
 When SignalRGB isn't streaming, the coordinator runs fallback effects:
