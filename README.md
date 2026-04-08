@@ -205,6 +205,10 @@ Requires OpenRGB running on the same host as the coordinator.
 
 See [RESEARCH.md](RESEARCH.md) for detailed reverse-engineering findings of the Etherlighting system, I2C bus details, and the full ubus API documentation.
 
+## See Also
+
+If you're looking for a UniFi security and performance optimization project, check out [Network Optimizer](https://github.com/Ozark-Connect/NetworkOptimizer) — a full network auditing and optimization tool for UniFi environments.
+
 ## License
 
 MIT
