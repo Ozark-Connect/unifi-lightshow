@@ -76,6 +76,7 @@ class SwitchConnection:
         except OSError as e:
             log.warning("[%s] UDP send failed: %s", self.switch.name, e)
 
+
     async def close(self):
         if self._sock:
             self._sock.close()

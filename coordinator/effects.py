@@ -127,6 +127,7 @@ class EffectEngine:
             "palette_cycle": self._palette_cycle,
             "palette_sweep": self._palette_sweep,
             "plasma": self._plasma,
+            "color_cycle": self._color_cycle,
             "off": self._off,
         }
 
@@ -318,10 +319,59 @@ class EffectEngine:
                 r = min(int(max(_c1[0], _c2[0]) * _br), max(0, r))
                 g = min(int(max(_c1[1], _c2[1]) * _br), max(0, g))
                 b = min(int(max(_c1[2], _c2[2]) * _br), max(0, b))
-                return (r, g, b, 0)
+                # Quantize to steps of 8 — aligns with daemon's threshold
+                # so slow-moving parts of the wave skip more frames
+                Q = 8
+                return (r // Q * Q, g // Q * Q, b // Q * Q, 0)
 
             self._emit_from_canvas(color_fn)
             phase += 0.07
+            await asyncio.sleep(speed)
+
+    # ── Color cycle ────────────────────────────────────────────────────
+
+    async def _color_cycle(self, speed: float = 0.2, use_tod: bool = True, **_):
+        """Fade all LEDs between two seasonal colors.
+
+        All ports get the same color, so the daemon's delta threshold means
+        only the first frame after a color change sends ubus calls — subsequent
+        identical frames are free. Quantized to steps of 8 for threshold alignment.
+        """
+        phase = 0.0
+        current_brightness = get_tod_brightness() if use_tod else 1.0
+        last_season = ""
+
+        while True:
+            c1, c2, season = get_seasonal_colors()
+            if season != last_season:
+                log.info("Color cycle season: %s", season)
+                last_season = season
+
+            if use_tod:
+                target = get_tod_brightness()
+                if abs(current_brightness - target) < 0.01:
+                    current_brightness = target
+                elif current_brightness < target:
+                    current_brightness = min(current_brightness + 0.005, target)
+                else:
+                    current_brightness = max(current_brightness - 0.005, target)
+
+            if current_brightness == 0:
+                self._emit_from_canvas(lambda nx, ny: (0, 0, 0, 0))
+                await asyncio.sleep(1.0)
+                continue
+
+            blend = (math.sin(phase) + 1) / 2
+            br = current_brightness
+            r = int((c1[0] * (1 - blend) + c2[0] * blend) * br)
+            g = int((c1[1] * (1 - blend) + c2[1] * blend) * br)
+            b = int((c1[2] * (1 - blend) + c2[2] * blend) * br)
+            Q = 8
+            r, g, b = r // Q * Q, g // Q * Q, b // Q * Q
+
+            self._emit_from_canvas(lambda nx, ny, _r=r, _g=g, _b=b: (_r, _g, _b, 0))
+
+            phase += 0.15
             await asyncio.sleep(speed)
 
     # ── Off ──────────────────────────────────────────────────────────────

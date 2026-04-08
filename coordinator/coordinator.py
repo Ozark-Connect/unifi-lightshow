@@ -61,11 +61,10 @@ async def main():
     await site.start()
     log.info("HTTP API on :%d (includes WLED /json endpoints)", config.http_port)
 
-    # WLED HTTP for SignalRGB (default 0.0.0.0:80)
-    if config.wled_bind_port:
-        wled_site = web.TCPSite(runner, config.wled_bind_ip, config.wled_bind_port)
-        await wled_site.start()
-        log.info("WLED HTTP on %s:%d", config.wled_bind_ip, config.wled_bind_port)
+    # WLED HTTP on port 80 for SignalRGB (binds to IoT VLAN IP only)
+    wled_site = web.TCPSite(runner, "192.168.42.220", 80)
+    await wled_site.start()
+    log.info("WLED HTTP on 192.168.42.220:80")
 
     # Graceful shutdown
     shutdown_event = asyncio.Event()
@@ -77,6 +76,11 @@ async def main():
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, handle_signal)
+
+    # Start default effect if configured
+    if config.default_effect:
+        effects.start(config.default_effect)
+        log.info("Default effect: %s", config.default_effect)
 
     # Run everything concurrently
     coalescer_task = asyncio.create_task(coalescer.run())

@@ -44,12 +44,27 @@ SignalRGB (Windows)                    Home Assistant
 
 ### How it's efficient
 
-The coordinator runs on a server/NAS and sends UDP color frames to lightweight C daemons deployed on each switch. These daemons call the `libubus` C API directly - no shell spawning, no fork/exec overhead. Result: **8fps at 90% switch CPU idle**.
+The coordinator runs on a server/NAS and sends UDP color frames to lightweight C daemons deployed on each switch. These daemons call the `libubus` C API directly — no shell spawning, no fork/exec overhead. The daemon uses delta updates with a color threshold, so only ports whose color actually changed get updated.
+
+**Transport comparison** (USW-Pro-XG-8-PoE, 10 ports):
 
 | Approach | CPU Idle | Load |
 |----------|----------|------|
 | SSH + shell commands @ 3fps | 36% | 1.6 |
 | libubus C daemon @ 8fps | **90%** | **0.86** |
+
+**Effect CPU impact** varies by how many LEDs change per frame:
+
+| Source | Switch CPU | Why |
+|--------|-----------|-----|
+| SignalRGB (WLED) | ~7-8% | Smooth gradients — most ports unchanged between frames, delta threshold skips them |
+| `color_cycle` | ~11-12% | All ports same color — changes infrequently due to quantization |
+| `plasma` | ~13-14% | Every port changes every frame (continuous sine wave) |
+| Stock Etherlighting | ~0% | MCU runs animation autonomously, no CPU involvement |
+
+> **Tip:** If you want minimal switch CPU impact, use `color_cycle` as your default effect or connect SignalRGB. The `plasma` effect looks great but costs more because it updates every LED every frame.
+>
+> **Should I worry about switch CPU?** Probably not. The MIPS CPU in these switches handles the management plane only — controller communication, STP, LLDP, SNMP, and optionally Layer 3 routing. All Layer 2 switching and forwarding happens in the switching ASIC at line rate regardless of CPU load. Even `plasma` at 13% leaves 87% headroom for management tasks that are already very lightweight on these devices.
 
 ## Supported Hardware
 
@@ -75,7 +90,8 @@ Copy `coordinator/switches.example.json` to `coordinator/switches.json` and edit
   "wled_bind_port": 80,
   "max_fps": 8,
   "brightness": 100,
-  "udp_timeout": 5.0
+  "udp_timeout": 5.0,
+  "default_effect": "plasma"
 }
 ```
 

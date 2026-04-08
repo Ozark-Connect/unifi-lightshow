@@ -28,6 +28,7 @@
 #define MAX_PORTS 10
 #define BUF_SIZE 2048
 #define DEFAULT_PORT 9200
+#define COLOR_THRESHOLD 4  /* skip port update if R/G/B each changed by less than this */
 
 /* ── Minimal libubox/libubus ABI declarations ──────────────────────────
  *
@@ -215,13 +216,20 @@ int main(int argc, char *argv[]) {
         if (n <= 0) continue;
         buf[n] = '\0';
 
-        int brightness;
+        int brightness = 100;
+        const char *bp = strstr(buf, "\"brightness\"");
+        if (bp) { bp = strchr(bp, ':'); if (bp) brightness = atoi(bp + 1); }
+
         int num_ports = parse_frame(buf, &brightness);
         if (num_ports == 0) continue;
 
         for (int i = 0; i < num_ports && i < MAX_PORTS; i++) {
-            if (cur_r[i] != prev_r[i] || cur_g[i] != prev_g[i] ||
-                cur_b[i] != prev_b[i] || brightness != prev_brightness) {
+            int dr = cur_r[i] > prev_r[i] ? cur_r[i] - prev_r[i] : prev_r[i] - cur_r[i];
+            int dg = cur_g[i] > prev_g[i] ? cur_g[i] - prev_g[i] : prev_g[i] - cur_g[i];
+            int db = cur_b[i] > prev_b[i] ? cur_b[i] - prev_b[i] : prev_b[i] - cur_b[i];
+
+            if (dr >= COLOR_THRESHOLD || dg >= COLOR_THRESHOLD || db >= COLOR_THRESHOLD ||
+                brightness != prev_brightness) {
                 set_port_rgb(i + 1, cur_r[i], cur_g[i], cur_b[i], brightness);
                 prev_r[i] = cur_r[i];
                 prev_g[i] = cur_g[i];

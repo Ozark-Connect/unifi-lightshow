@@ -105,7 +105,7 @@ def create_wled_routes(app: web.Application, coalescer: FrameCoalescer, config: 
             "brand": "WLED",
             "product": "Etherlighting",
             "mac": "aabbccddeeff",
-            "ip": config.wled_bind_ip if config.wled_bind_ip != "0.0.0.0" else "",
+            "ip": "192.168.42.220",
         })
 
     async def json_state(request: web.Request) -> web.Response:

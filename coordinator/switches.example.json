@@ -22,5 +22,6 @@
   "wled_bind_port": 80,
   "max_fps": 8,
   "brightness": 100,
-  "udp_timeout": 5.0
+  "udp_timeout": 5.0,
+  "default_effect": "plasma"
 }
