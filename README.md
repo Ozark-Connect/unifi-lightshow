@@ -48,23 +48,25 @@ The coordinator runs on a server/NAS and sends UDP color frames to lightweight C
 
 **Transport comparison** (USW-Pro-XG-8-PoE, 10 ports):
 
-| Approach | CPU Idle | Load |
-|----------|----------|------|
-| SSH + shell commands @ 3fps | 36% | 1.6 |
-| libubus C daemon @ 8fps | **90%** | **0.86** |
+| Approach | CPU over baseline | Load |
+|----------|-------------------|------|
+| SSH + shell commands @ 3fps | ~56% | 1.6 |
+| libubus C daemon @ 8fps | **1-7%** | **0.86** |
 
-**Effect CPU impact** varies by how many LEDs change per frame:
+The switch has a baseline CPU usage of ~8% from Realtek ASIC management kernel threads (port stats, link monitoring, STP, etc.). The numbers above are the additional CPU cost on top of that baseline. When idle (no UDP frames), the daemon contributes 0% CPU.
 
-| Source | Switch CPU | Why |
-|--------|-----------|-----|
-| SignalRGB (WLED) | ~7-8% | Smooth gradients — most ports unchanged between frames, delta threshold skips them |
-| `color_cycle` | ~11-12% | All ports same color — changes infrequently due to quantization |
-| `plasma` | ~13-14% | Every port changes every frame (continuous sine wave) |
-| Stock Etherlighting | ~0% | MCU runs animation autonomously, no CPU involvement |
+**Effect CPU impact over baseline** varies by how many LEDs change per frame:
+
+| Source | CPU over baseline | Why |
+|--------|-------------------|-----|
+| SignalRGB (WLED) | ~1% | Smooth gradients — most ports unchanged between frames, delta threshold skips them |
+| `color_cycle` | ~3-4% | All ports same color — changes infrequently due to quantization |
+| `plasma` | ~5-6% | Every port changes every frame (continuous sine wave) |
+| Stock Etherlighting | 0% | MCU runs animation autonomously, no CPU involvement |
 
 > **Tip:** If you want minimal switch CPU impact, use `color_cycle` as your default effect or connect SignalRGB. The `plasma` effect looks great but costs more because it updates every LED every frame.
 >
-> **Should I worry about switch CPU?** Probably not. The MIPS CPU in these switches handles the management plane only — controller communication, STP, LLDP, SNMP, and optionally Layer 3 routing. All Layer 2 switching and forwarding happens in the switching ASIC at line rate regardless of CPU load. Even `plasma` at 13% leaves 87% headroom for management tasks that are already very lightweight on these devices.
+> **Should I worry about switch CPU?** No. The MIPS CPU in these switches handles the management plane only — controller communication, STP, LLDP, SNMP, and optionally Layer 3 routing. All Layer 2 switching and forwarding happens in the switching ASIC at line rate regardless of CPU load. Even `plasma` at ~14% total (~6% over baseline) leaves plenty of headroom for management tasks that are already very lightweight on these devices.
 
 ## Supported Hardware
 
