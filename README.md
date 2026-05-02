@@ -84,7 +84,7 @@ Copy `coordinator/switches.example.json` to `coordinator/switches.json` and edit
     {
       "name": "my-switch",
       "host": "192.168.1.10",
-      "user": "admin",
+      "user": "your-ssh-username",
       "num_ports": 10
     }
   ],
@@ -120,6 +120,7 @@ The coordinator SSHes into each switch on startup to bootstrap the daemon. You n
 
 1. In UniFi Network: **UniFi Devices → Device Updates and Settings → Device SSH Settings → SSH Keys**
 2. Add the public key of the machine running the coordinator
+3. Use the SSH username you configured in UniFi Network as the `user` field in `switches.json`
 
 ### 4. Start the coordinator
 
@@ -135,10 +136,10 @@ On startup, the coordinator SSHes into each switch. If the daemon binary isn't p
 
 > **Manual deploy:** If you need to redeploy manually (e.g., after rebuilding the binary), you can SCP directly:
 > ```bash
-> scp switch-daemon/etherlightd_udp admin@switch:/etc/persistent/
-> scp switch-daemon/start_etherlightd_udp.sh admin@switch:/etc/persistent/
-> ssh admin@switch "chmod +x /etc/persistent/etherlightd_udp /etc/persistent/start_etherlightd_udp.sh"
-> ssh admin@switch "/etc/persistent/start_etherlightd_udp.sh"
+> scp switch-daemon/etherlightd_udp user@switch:/etc/persistent/
+> scp switch-daemon/start_etherlightd_udp.sh user@switch:/etc/persistent/
+> ssh user@switch "chmod +x /etc/persistent/etherlightd_udp /etc/persistent/start_etherlightd_udp.sh"
+> ssh user@switch "/etc/persistent/start_etherlightd_udp.sh"
 > ```
 
 ### 5. Connect SignalRGB
