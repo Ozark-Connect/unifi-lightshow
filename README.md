@@ -114,28 +114,32 @@ tar xzf /tmp/mips-musl.tgz -C /tmp/
     -Wl,-rpath,/lib
 ```
 
-### 3. Deploy the switch daemon
+### 3. Set up SSH access to switches
 
-Copy the binary and startup script to each switch's persistent storage:
+The coordinator SSHes into each switch on startup to bootstrap the daemon. You need to add your SSH public key to UniFi Network so the coordinator can connect:
 
-```bash
-scp switch-daemon/etherlightd_udp admin@switch:/etc/persistent/
-scp switch-daemon/start_etherlightd_udp.sh admin@switch:/etc/persistent/
-ssh admin@switch "chmod +x /etc/persistent/etherlightd_udp /etc/persistent/start_etherlightd_udp.sh"
-ssh admin@switch "/etc/persistent/start_etherlightd_udp.sh"
-```
-
-The startup script sets up a cron job to auto-start the daemon after reboots.
+1. In UniFi Network: **UniFi Devices → Device Updates and Settings → Device SSH Settings → SSH Keys**
+2. Add the public key of the machine running the coordinator
 
 ### 4. Start the coordinator
 
 ```bash
 cd coordinator
-cp switches.example.json switches.json  # edit with your switch IPs
-docker compose up -d
+cp switches.example.json switches.json  # edit with your switch IPs/usernames
+cp ../switch-daemon/etherlightd_udp .
+cp ../switch-daemon/start_etherlightd_udp.sh .
+docker compose up -d --build
 ```
 
-The coordinator will SSH to each switch once on startup to ensure the daemon is running, then communicate via UDP.
+On startup, the coordinator SSHes into each switch. If the daemon binary isn't present in `/etc/persistent/`, it automatically deploys the binary and start script via SCP. Then it runs the start script, which also sets up a cron job to auto-start the daemon after reboots. After bootstrap, all communication switches to UDP.
+
+> **Manual deploy:** If you need to redeploy manually (e.g., after rebuilding the binary), you can SCP directly:
+> ```bash
+> scp switch-daemon/etherlightd_udp admin@switch:/etc/persistent/
+> scp switch-daemon/start_etherlightd_udp.sh admin@switch:/etc/persistent/
+> ssh admin@switch "chmod +x /etc/persistent/etherlightd_udp /etc/persistent/start_etherlightd_udp.sh"
+> ssh admin@switch "/etc/persistent/start_etherlightd_udp.sh"
+> ```
 
 ### 5. Connect SignalRGB
 
@@ -228,6 +232,7 @@ Requires OpenRGB running on the same host as the coordinator.
 
 - **Safe commands**: Only `port_rgb` and `behavior: steady` are used. These are safe and don't corrupt the switch's MCU state.
 - **Dangerous commands (avoided)**: `led_stop`, `port_pwm`, `reset: cold`, `mode_color`, `led_mode` - these can corrupt MCU state, kill LED output, or break I2C communication.
+- **Auto-deploy**: On startup, the coordinator checks each switch for the daemon binary. If missing, it deploys via SCP automatically.
 - **Persistence**: The switch daemon survives reboots via cron. The coordinator runs as a Docker container with `restart: unless-stopped`.
 - **Firmware updates**: The daemon in `/etc/persistent/` survives firmware updates. The binary may need to be rebuilt if Ubiquiti changes the libubus ABI.
 

@@ -7,6 +7,7 @@ on each switch by SSHing once on startup to kick off the persistent script.
 import asyncio
 import json
 import logging
+import pathlib
 import socket
 
 import asyncssh
@@ -14,6 +15,11 @@ import asyncssh
 from config import Config, SwitchConfig
 
 log = logging.getLogger(__name__)
+
+SWITCH_DAEMON_DIR = "/etc/persistent"
+SWITCH_BINARY = f"{SWITCH_DAEMON_DIR}/etherlightd_udp"
+SWITCH_START_SCRIPT = f"{SWITCH_DAEMON_DIR}/start_etherlightd_udp.sh"
+LOCAL_DAEMON_DIR = pathlib.Path("/app/switch-daemon")
 
 
 def rgb_to_hex(r: int, g: int, b: int) -> str:
@@ -36,8 +42,10 @@ class SwitchConnection:
         return self._connected
 
     async def connect(self):
-        """Bootstrap the on-switch daemon via SSH, then open UDP socket."""
-        # SSH once to ensure the daemon is running
+        """Bootstrap the on-switch daemon via SSH, then open UDP socket.
+
+        Auto-deploys the binary and start script if not present on the switch.
+        """
         try:
             conn = await asyncssh.connect(
                 self.switch.host,
@@ -46,9 +54,28 @@ class SwitchConnection:
                 keepalive_interval=15,
                 keepalive_count_max=3,
             )
-            # Run the persistent startup script
+
+            result = await conn.run(
+                f"test -f {SWITCH_BINARY}", check=False, timeout=5,
+            )
+            if result.exit_status != 0:
+                log.info("[%s] Daemon not found, deploying...", self.switch.name)
+                await asyncssh.scp(
+                    LOCAL_DAEMON_DIR / "etherlightd_udp",
+                    (conn, SWITCH_BINARY),
+                )
+                await asyncssh.scp(
+                    LOCAL_DAEMON_DIR / "start_etherlightd_udp.sh",
+                    (conn, SWITCH_START_SCRIPT),
+                )
+                await conn.run(
+                    f"chmod +x {SWITCH_BINARY} {SWITCH_START_SCRIPT}",
+                    timeout=10,
+                )
+                log.info("[%s] Deploy complete", self.switch.name)
+
             await conn.run(
-                "nohup /etc/persistent/start_etherlightd_udp.sh > /dev/null 2>&1 &",
+                f"nohup {SWITCH_START_SCRIPT} > /dev/null 2>&1 &",
                 timeout=10,
             )
             log.info("[%s] Bootstrap: daemon started via SSH", self.switch.name)
