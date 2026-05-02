@@ -120,7 +120,7 @@ The coordinator SSHes into each switch on startup to bootstrap the daemon. You n
 
 1. In UniFi Network: **UniFi Devices → Device Updates and Settings → Device SSH Settings → SSH Keys**
 2. Add the public key of the machine running the coordinator
-3. Use the SSH username you configured in UniFi Network as the `user` field in `switches.json`
+3. Use the **Username** you configured in UniFi Network as the `user` field in `switches.json`
 
 ### 4. Start the coordinator
 
