@@ -62,9 +62,9 @@ async def main():
     log.info("HTTP API on :%d (includes WLED /json endpoints)", config.http_port)
 
     # WLED HTTP on port 80 for SignalRGB (binds to IoT VLAN IP only)
-    wled_site = web.TCPSite(runner, "192.168.42.220", 80)
+    wled_site = web.TCPSite(runner, "192.168.64.220", 80)
     await wled_site.start()
-    log.info("WLED HTTP on 192.168.42.220:80")
+    log.info("WLED HTTP on 192.168.64.220:80")
 
     # Graceful shutdown
     shutdown_event = asyncio.Event()
