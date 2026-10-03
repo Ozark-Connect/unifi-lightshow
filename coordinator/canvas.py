@@ -3,7 +3,66 @@
 import math
 from dataclasses import dataclass
 
-from config import SwitchConfig, OpenRGBDeviceConfig, Config
+from config import SwitchConfig, OpenRGBDeviceConfig, GoveeDeviceConfig, Config
+
+
+def _point_along(points: list[tuple[float, float]], dist: float) -> tuple[float, float]:
+    """Return the point at arc length dist along a polyline."""
+    for (ax, ay), (bx, by) in zip(points, points[1:]):
+        seg = math.hypot(bx - ax, by - ay)
+        if dist <= seg and seg > 0:
+            f = dist / seg
+            return (ax + (bx - ax) * f, ay + (by - ay) * f)
+        dist -= seg
+    return points[-1]
+
+
+def _polyline_length(points: list[tuple[float, float]]) -> float:
+    return sum(math.hypot(bx - ax, by - ay) for (ax, ay), (bx, by) in zip(points, points[1:]))
+
+
+def _loop_corners(gv: GoveeDeviceConfig) -> list[tuple[float, float]]:
+    """Closed polyline around gv.rect, starting at the start of gv.start_edge.
+
+    y increases downward. Facing the device, ccw runs bottom left-to-right,
+    right side upward, top right-to-left, left side downward.
+    """
+    x0, y0, x1, y1 = gv.rect
+    if gv.direction == "ccw":
+        edges = [("bottom", (x0, y1)), ("right", (x1, y1)), ("top", (x1, y0)), ("left", (x0, y0))]
+    else:
+        edges = [("bottom", (x1, y1)), ("left", (x0, y1)), ("top", (x0, y0)), ("right", (x1, y0))]
+    names = [n for n, _ in edges]
+    i = names.index(gv.start_edge)
+    corners = [c for _, c in edges[i:] + edges[:i]]
+    return corners + [corners[0]]
+
+
+def govee_positions(gv: GoveeDeviceConfig) -> list[tuple[float, float]]:
+    """Canvas (x, y) of every segment of a Govee device, in segment order."""
+    n = gv.num_segments
+
+    if gv.shape == "path":
+        length = _polyline_length(gv.path)
+        if n == 1:
+            return [gv.path[0]]
+        return [_point_along(gv.path, length * i / (n - 1)) for i in range(n)]
+
+    if gv.shape == "loop":
+        corners = _loop_corners(gv)
+        perimeter = _polyline_length(corners)
+        first_edge = math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1])
+        d0 = gv.start * first_edge
+        return [_point_along(corners, (d0 + perimeter * i / n) % perimeter) for i in range(n)]
+
+    # strip
+    rad = math.radians(gv.rotation)
+    cos_r = math.cos(rad)
+    sin_r = math.sin(rad)
+    return [
+        (gv.x + i * gv.led_spacing * cos_r, gv.y + i * gv.led_spacing * sin_r)
+        for i in range(n)
+    ]
 
 
 @dataclass
@@ -68,6 +127,16 @@ class Canvas:
 
                 self._pixels.append(CanvasPixel(
                     switch_name=orgb.name,
+                    port=p + 1,
+                    x=wx,
+                    y=wy,
+                ))
+
+        # Add Govee segments
+        for gv in self._config.govee:
+            for p, (wx, wy) in enumerate(govee_positions(gv)):
+                self._pixels.append(CanvasPixel(
+                    switch_name=gv.name,
                     port=p + 1,
                     x=wx,
                     y=wy,
