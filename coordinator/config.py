@@ -34,11 +34,56 @@ class OpenRGBDeviceConfig:
     led_spacing: float = 1.0
 
 
+GOVEE_SHAPES = ("strip", "path", "loop")
+GOVEE_PROTOCOLS = ("dreamview", "razer")
+LOOP_EDGES = ("bottom", "right", "top", "left")
+
+
+@dataclass
+class GoveeDeviceConfig:
+    """Configuration for a Govee light driven over the LAN API.
+
+    The device stretches whatever segment count it receives across its
+    physical LEDs, so num_segments sets canvas resolution, not a hardware
+    count. Segment positions on the canvas come from one of three shapes:
+
+    - strip: a straight line from (x, y), like a switch or OpenRGB device
+    - path:  segments spaced evenly by arc length along a polyline, first
+             segment on the first point, last segment on the last point
+    - loop:  segments spaced evenly around the perimeter of a rectangle,
+             starting at a fraction along one edge (TV backlights)
+    """
+    name: str
+    ip: str
+    num_segments: int = 15
+    protocol: str = "dreamview"
+    shape: str = "strip"
+    # strip
+    x: float = 0.0
+    y: float = 0.0
+    rotation: float = 0.0
+    led_spacing: float = 1.0
+    # path
+    path: list[tuple[float, float]] = field(default_factory=list)
+    # loop: rect is (x0, y0, x1, y1) with y increasing downward, so "bottom"
+    # is the y1 edge. start is the fraction along start_edge, in the travel
+    # direction, where segment 0 sits. direction is as seen facing the device.
+    rect: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
+    start_edge: str = "bottom"
+    start: float = 0.0
+    direction: str = "ccw"
+
+
 @dataclass
 class Config:
     switches: list[SwitchConfig] = field(default_factory=list)
     openrgb: OpenRGBDeviceConfig = field(default_factory=OpenRGBDeviceConfig)
     openrgb_enabled: bool = False
+    # Govee devices are effect-only outputs: they are not part of total_ports,
+    # so adding one never changes the LED count SignalRGB sees over WLED.
+    govee: list[GoveeDeviceConfig] = field(default_factory=list)
+    govee_keepalive: float = 1.0
+    govee_off_resend: float = 30.0
     http_port: int = 9199
     udp_port: int = 9200
     max_fps: float = 10.0
@@ -123,6 +168,45 @@ class Config:
                 rotation=orgb.get("rotation", 0.0),
                 led_spacing=orgb.get("led_spacing", 1.0),
             )
+
+        for gv in data.get("govee", []):
+            dev = GoveeDeviceConfig(
+                name=gv["name"],
+                ip=gv["ip"],
+                num_segments=gv.get("num_segments", 15),
+                protocol=gv.get("protocol", "dreamview"),
+                shape=gv.get("shape", "strip"),
+                x=gv.get("x", 0.0),
+                y=gv.get("y", 0.0),
+                rotation=gv.get("rotation", 0.0),
+                led_spacing=gv.get("led_spacing", 1.0),
+                path=[tuple(p) for p in gv.get("path", [])],
+                rect=tuple(gv.get("rect", (0.0, 0.0, 1.0, 1.0))),
+                start_edge=gv.get("start_edge", "bottom"),
+                start=gv.get("start", 0.0),
+                direction=gv.get("direction", "ccw"),
+            )
+            if dev.shape not in GOVEE_SHAPES:
+                raise ValueError(f"govee {dev.name}: shape must be one of {GOVEE_SHAPES}")
+            if dev.protocol not in GOVEE_PROTOCOLS:
+                raise ValueError(f"govee {dev.name}: protocol must be one of {GOVEE_PROTOCOLS}")
+            if dev.shape == "path" and len(dev.path) < 2:
+                raise ValueError(f"govee {dev.name}: path shape needs at least 2 points")
+            if dev.shape == "loop":
+                if len(dev.rect) != 4:
+                    raise ValueError(f"govee {dev.name}: rect must be [x0, y0, x1, y1]")
+                if dev.start_edge not in LOOP_EDGES:
+                    raise ValueError(f"govee {dev.name}: start_edge must be one of {LOOP_EDGES}")
+                if dev.direction not in ("cw", "ccw"):
+                    raise ValueError(f"govee {dev.name}: direction must be cw or ccw")
+            if not 1 <= dev.num_segments <= 255:
+                raise ValueError(f"govee {dev.name}: num_segments must be 1-255")
+            self.govee.append(dev)
+
+        if "govee_keepalive" in data:
+            self.govee_keepalive = data["govee_keepalive"]
+        if "govee_off_resend" in data:
+            self.govee_off_resend = data["govee_off_resend"]
 
         if "http_port" in data:
             self.http_port = data["http_port"]
