@@ -87,7 +87,10 @@ async def govee_movie(request: web.Request) -> web.Response:
     config: Config = request.app["config"]
     if not config.govee:
         return web.json_response({"error": "no govee devices configured"}, status=404)
-    body = await request.json()
+    try:
+        body = await request.json()
+    except ValueError:
+        return web.json_response({"error": "body must be JSON"}, status=400)
     active = body.get("active")
     if isinstance(active, str):
         active = active.strip().lower() in ("true", "on", "1")
