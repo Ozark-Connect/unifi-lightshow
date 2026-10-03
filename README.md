@@ -264,7 +264,7 @@ Set the movie flag with `POST /govee/movie` (for example, from a Home Assistant 
     }
   ],
   "govee_keepalive": 1.0,
-  "govee_off_resend": 30.0
+  "govee_off_resend": 3.0
 }
 ```
 
@@ -278,7 +278,7 @@ Set the movie flag with `POST /govee/movie` (for example, from a Home Assistant 
 | `start_edge`, `start` | `bottom`, 0.0 | Loop only. Segment 0 sits at fraction `start` along `start_edge`, measured in the travel direction. |
 | `direction` | `ccw` | Loop only. Travel direction as seen facing the device. `ccw` runs left to right along the bottom. |
 | `govee_keepalive` | 1.0 | Seconds between frame resends while streaming. Govee lights leave streaming mode when frames stop. |
-| `govee_off_resend` | 30.0 | Seconds between off commands while holding the lights off. 0 disables the resend. |
+| `govee_off_resend` | 3.0 | Seconds between off commands while holding the lights off. Govee lights can power themselves back on (for example, when SignalRGB's addon leaves streaming mode on exit), so a short interval keeps any flash brief. 0 disables the resend. |
 
 To find a device's segment order, light one segment at a time and note where it appears.
 

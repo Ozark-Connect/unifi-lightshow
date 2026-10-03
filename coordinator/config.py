@@ -84,7 +84,7 @@ class Config:
     # so adding one never changes the LED count SignalRGB sees over WLED.
     govee: list[GoveeDeviceConfig] = field(default_factory=list)
     govee_keepalive: float = 1.0
-    govee_off_resend: float = 30.0
+    govee_off_resend: float = 3.0
     http_port: int = 9199
     udp_port: int = 9200
     max_fps: float = 10.0

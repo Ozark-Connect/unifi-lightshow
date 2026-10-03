@@ -82,10 +82,12 @@ class GoveeOutput:
         log.info("Govee activated")
 
     async def deactivate(self):
-        """Leave streaming mode and power off."""
-        for dev in self._devices.values():
-            self._send(dev, {"cmd": "razer", "data": {"pt": RAZER_OFF}})
-        await asyncio.sleep(0.1)
+        """Power off.
+
+        Deliberately no streaming-off (RAZER_OFF): leaving streaming mode makes
+        the device show its stored scene until the power-off lands, which reads
+        as a flash. activate() re-enters streaming mode on the next power-on.
+        """
         for dev in self._devices.values():
             self._send(dev, {"cmd": "turn", "data": {"value": 0}})
         log.debug("Govee deactivated")
