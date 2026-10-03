@@ -92,11 +92,11 @@ class GoveeOutput:
 
     def send_frames(self, frames: dict[str, list[tuple[int, int, int, int]]], brightness: int = 100):
         """Push one frame to each Govee device present in frames."""
-        scale = brightness / 100.0
         for name, colors in frames.items():
             dev = self._devices.get(name)
             if dev is None:
                 continue
+            scale = brightness / 100.0 * dev.brightness / 100.0
             rgb = [(int(r * scale), int(g * scale), int(b * scale)) for r, g, b, _w in colors]
             pt = base64.b64encode(_frame_packet(dev.protocol, rgb)).decode()
             self._send(dev, {"cmd": "razer", "data": {"pt": pt}})

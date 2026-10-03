@@ -272,6 +272,7 @@ Set the movie flag with `POST /govee/movie` (for example, from a Home Assistant 
 |---|---|---|
 | `name`, `ip` | required | Device name on the canvas and its LAN IP. LAN Control must be enabled in the Govee app. |
 | `num_segments` | 15 | Colors sent per frame. The device stretches them across its physical LEDs, so this sets canvas resolution, not a hardware count. |
+| `brightness` | 100 | Percent of the coordinator brightness, to balance a bright device against the switches. |
 | `protocol` | `dreamview` | `dreamview` or `razer`. Use whichever the SignalRGB Govee addon uses for the SKU. |
 | `shape` | `strip` | `strip`: a straight line from `x`, `y` with `rotation` and `led_spacing`. `path`: segments spaced evenly along the `path` polyline, segment 0 on the first point. `loop`: segments spaced evenly around the `rect` perimeter (`[x0, y0, x1, y1]`, y increases downward). |
 | `start_edge`, `start` | `bottom`, 0.0 | Loop only. Segment 0 sits at fraction `start` along `start_edge`, measured in the travel direction. |

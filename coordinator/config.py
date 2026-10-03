@@ -57,6 +57,7 @@ class GoveeDeviceConfig:
     ip: str
     num_segments: int = 15
     protocol: str = "dreamview"
+    brightness: int = 100  # percent of the coordinator brightness
     shape: str = "strip"
     # strip
     x: float = 0.0
@@ -175,6 +176,7 @@ class Config:
                 ip=gv["ip"],
                 num_segments=gv.get("num_segments", 15),
                 protocol=gv.get("protocol", "dreamview"),
+                brightness=gv.get("brightness", 100),
                 shape=gv.get("shape", "strip"),
                 x=gv.get("x", 0.0),
                 y=gv.get("y", 0.0),
@@ -199,6 +201,8 @@ class Config:
                     raise ValueError(f"govee {dev.name}: start_edge must be one of {LOOP_EDGES}")
                 if dev.direction not in ("cw", "ccw"):
                     raise ValueError(f"govee {dev.name}: direction must be cw or ccw")
+            if not 0 <= dev.brightness <= 100:
+                raise ValueError(f"govee {dev.name}: brightness must be 0-100")
             if not 1 <= dev.num_segments <= 255:
                 raise ValueError(f"govee {dev.name}: num_segments must be 1-255")
             self.govee.append(dev)
