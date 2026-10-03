@@ -32,8 +32,17 @@ def create_app(
     app.router.add_post("/port", port)
     app.router.add_post("/ports", ports)
     app.router.add_post("/effect", effect)
+    app.router.add_post("/govee/movie", govee_movie)
 
     return app
+
+
+def _govee_status(coalescer: FrameCoalescer, config: Config) -> dict:
+    return {
+        "movie": coalescer.govee_movie,
+        "state": coalescer.govee_state,
+        "devices": {gv.name: gv.ip for gv in config.govee},
+    }
 
 
 async def health(request: web.Request) -> web.Response:
@@ -53,12 +62,14 @@ async def health(request: web.Request) -> web.Response:
         "active_source": coalescer.active_source_name,
         "switches": switches,
         "total_ports": config.total_ports,
+        "govee": _govee_status(coalescer, config) if config.govee else None,
     })
 
 
 async def state(request: web.Request) -> web.Response:
     coalescer: FrameCoalescer = request.app["coalescer"]
     effects: EffectEngine = request.app["effects"]
+    config: Config = request.app["config"]
     frames = {}
     for name, colors in coalescer.current_frames.items():
         frames[name] = [list(c) for c in colors]
@@ -66,8 +77,28 @@ async def state(request: web.Request) -> web.Response:
         "active_source": coalescer.active_source_name,
         "active_effect": effects.active_effect,
         "brightness": coalescer.brightness,
+        "govee": _govee_status(coalescer, config) if config.govee else None,
         "frames": frames,
     })
+
+
+async def govee_movie(request: web.Request) -> web.Response:
+    """Set the movie flag: when true, Govee lights run the effect while SignalRGB is idle."""
+    config: Config = request.app["config"]
+    if not config.govee:
+        return web.json_response({"error": "no govee devices configured"}, status=404)
+    try:
+        body = await request.json()
+    except ValueError:
+        return web.json_response({"error": "body must be JSON"}, status=400)
+    active = body.get("active")
+    if isinstance(active, str):
+        active = active.strip().lower() in ("true", "on", "1")
+    if not isinstance(active, bool):
+        return web.json_response({"error": "missing boolean 'active' field"}, status=400)
+    coalescer: FrameCoalescer = request.app["coalescer"]
+    coalescer.set_govee_movie(active)
+    return web.json_response({"status": "ok", "govee": _govee_status(coalescer, config)})
 
 
 async def control(request: web.Request) -> web.Response:

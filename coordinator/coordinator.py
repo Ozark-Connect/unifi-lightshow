@@ -10,6 +10,7 @@ from config import Config
 from canvas import Canvas
 from ssh_transport import SSHTransport
 from openrgb_output import OpenRGBOutput
+from govee_output import GoveeOutput
 from frame_coalescer import FrameCoalescer
 from effects import EffectEngine
 from http_api import create_app
@@ -48,8 +49,14 @@ async def main():
             log.warning("OpenRGB connect failed, continuing without it: %s", e)
             openrgb = None
 
+    # Set up Govee output if configured
+    govee = None
+    if config.govee:
+        govee = GoveeOutput(config)
+        await govee.start()
+
     # Set up frame coalescer and effects
-    coalescer = FrameCoalescer(transport, openrgb, config)
+    coalescer = FrameCoalescer(transport, openrgb, govee, config)
     effects = EffectEngine(coalescer, canvas, config)
 
     # Set up HTTP API + WLED emulation endpoints
@@ -108,6 +115,9 @@ async def main():
     await transport.close_all()
     if openrgb:
         await openrgb.close()
+    if govee:
+        await coalescer.release_govee()
+        govee.close()
     log.info("Shutdown complete")
 
 
