@@ -218,7 +218,13 @@ class FrameCoalescer:
                     openrgb_frame = None
                     orgb_name = self._config.openrgb.name if self._config.openrgb_enabled else None
 
-                    for name, colors in self._frames.items():
+                    # Snapshot before awaiting: the effect task can replace
+                    # self._frames mid-send, and that newer frame must not be
+                    # recorded as sent.
+                    snapshot = {k: list(v) for k, v in self._frames.items()}
+                    self._dirty = False
+
+                    for name, colors in snapshot.items():
                         if name == orgb_name:
                             openrgb_frame = colors
                         elif name not in self._govee_names:
@@ -234,8 +240,7 @@ class FrameCoalescer:
                     if tasks:
                         await asyncio.gather(*tasks, return_exceptions=True)
 
-                    self._last_sent = {k: list(v) for k, v in self._frames.items()}
-                    self._dirty = False
+                    self._last_sent = snapshot
                     self._frames_sent += 1
                 except Exception as e:
                     log.warning("Frame send failed: %s", e)
