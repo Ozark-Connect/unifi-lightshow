@@ -2,7 +2,7 @@
   "switches": [
     {
       "name": "switch-1",
-      "host": "192.168.1.10",
+      "host": "10.42.1.10",
       "user": "your-ssh-username",
       "num_ports": 10,
       "x": 0.0,
@@ -21,7 +21,7 @@
   "govee": [
     {
       "name": "govee-1",
-      "ip": "192.168.1.50",
+      "ip": "10.42.1.50",
       "num_segments": 15,
       "shape": "strip",
       "x": 0.0,
