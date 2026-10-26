@@ -83,7 +83,7 @@ Copy `coordinator/switches.example.json` to `coordinator/switches.json` and edit
   "switches": [
     {
       "name": "my-switch",
-      "host": "192.168.1.10",
+      "host": "10.42.1.10",
       "user": "your-ssh-username",
       "num_ports": 10
     }
@@ -247,14 +247,14 @@ Set the movie flag with `POST /govee/movie` (for example, from a Home Assistant 
   "govee": [
     {
       "name": "hexa",
-      "ip": "192.168.1.60",
+      "ip": "10.42.1.60",
       "num_segments": 15,
       "shape": "path",
       "path": [[2.0, 8.5], [3.2, 8.5], [4.6, 8.3], [6.2, 8.8], [6.2, 10.4]]
     },
     {
       "name": "tv",
-      "ip": "192.168.1.61",
+      "ip": "10.42.1.61",
       "num_segments": 10,
       "shape": "loop",
       "rect": [6.5, 8.2, 15.5, 13.7],
