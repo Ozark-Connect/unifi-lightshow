@@ -10,7 +10,8 @@ services:
     environment:
       - TZ=${TZ:-America/Chicago}
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:9199/health"]
+      # python:3.13-slim has no curl; the check uses the interpreter the image already has.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9199/health', timeout=4)"]
       interval: 30s
       timeout: 5s
       retries: 3
