@@ -83,7 +83,7 @@ Copy `coordinator/switches.example.json` to `coordinator/switches.json` and edit
   "switches": [
     {
       "name": "my-switch",
-      "host": "192.168.1.10",
+      "host": "10.42.1.10",
       "user": "your-ssh-username",
       "num_ports": 10
     }
@@ -194,6 +194,7 @@ POST /effect               - start an effect: {"effect": "plasma"}
 POST /control              - {"action": "stop"} to stop effects
 POST /port                 - set one port: {"port": 1, "r": 255, "g": 0, "b": 0}
 POST /ports                - set all ports: {"colors": [[255,0,0,0], ...]}
+POST /govee/movie          - Govee movie flag: {"active": true}
 ```
 
 ## Multi-Switch Spatial Canvas
@@ -228,6 +229,60 @@ Add an `openrgb` section to your config to include ARGB devices on the same canv
 ```
 
 Requires OpenRGB running on the same host as the coordinator.
+
+## Govee Integration
+
+Add a `govee` list to drive Govee Wi-Fi lights over the Govee LAN API. The coordinator uses the same streaming mode as the SignalRGB Govee addon, so this targets lights that SignalRGB also drives directly:
+
+| SignalRGB streaming to the coordinator | Movie flag | Coordinator does to the Govee lights |
+|---|---|---|
+| yes | any | Nothing. SignalRGB owns them. |
+| no | on | Turns them on and streams the current effect. |
+| no | off | Turns them off, and re-sends off every `govee_off_resend` seconds. |
+
+Set the movie flag with `POST /govee/movie` (for example, from a Home Assistant automation). It resets to off when the coordinator restarts, so resend it periodically. After startup the coordinator waits one `udp_timeout` before it touches the lights, so a restart while SignalRGB is streaming does not switch them off.
+
+```json
+{
+  "govee": [
+    {
+      "name": "hexa",
+      "ip": "10.42.1.60",
+      "num_segments": 15,
+      "shape": "path",
+      "path": [[2.0, 8.5], [3.2, 8.5], [4.6, 8.3], [6.2, 8.8], [6.2, 10.4]]
+    },
+    {
+      "name": "tv",
+      "ip": "10.42.1.61",
+      "num_segments": 10,
+      "shape": "loop",
+      "rect": [6.5, 8.2, 15.5, 13.7],
+      "start_edge": "bottom",
+      "start": 0.4,
+      "direction": "ccw"
+    }
+  ],
+  "govee_keepalive": 1.0,
+  "govee_off_resend": 3.0
+}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `name`, `ip` | required | Device name on the canvas and its LAN IP. LAN Control must be enabled in the Govee app. |
+| `num_segments` | 15 | Colors sent per frame. The device stretches them across its physical LEDs, so this sets canvas resolution, not a hardware count. |
+| `brightness` | 100 | Percent of the coordinator brightness, to balance a bright device against the switches. |
+| `protocol` | `dreamview` | `dreamview` or `razer`. Use whichever the SignalRGB Govee addon uses for the SKU. |
+| `shape` | `strip` | `strip`: a straight line from `x`, `y` with `rotation` and `led_spacing`. `path`: segments spaced evenly along the `path` polyline, segment 0 on the first point. `loop`: segments spaced evenly around the `rect` perimeter (`[x0, y0, x1, y1]`, y increases downward). |
+| `start_edge`, `start` | `bottom`, 0.0 | Loop only. Segment 0 sits at fraction `start` along `start_edge`, measured in the travel direction. |
+| `direction` | `ccw` | Loop only. Travel direction as seen facing the device. `ccw` runs left to right along the bottom. |
+| `govee_keepalive` | 1.0 | Seconds between frame resends while streaming. Govee lights leave streaming mode when frames stop. |
+| `govee_off_resend` | 3.0 | Seconds between off commands while holding the lights off. Govee lights can power themselves back on (for example, when SignalRGB's addon leaves streaming mode on exit), so a short interval keeps any flash brief. 0 disables the resend. |
+
+To find a device's segment order, light one segment at a time and note where it appears.
+
+Govee segments are not counted in the WLED LED count, so adding a Govee device does not change what SignalRGB sees. The coordinator only sends to UDP 4003 and never binds 4002 (the Govee reply port), so it runs next to other LAN API integrations such as govee2mqtt.
 
 ## Important Notes
 

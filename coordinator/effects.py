@@ -152,6 +152,8 @@ class EffectEngine:
             frames[sw.name] = [(0, 0, 0, 0)] * sw.num_ports
         if self._config.openrgb_enabled:
             frames[self._config.openrgb.name] = [(0, 0, 0, 0)] * self._config.openrgb.num_leds
+        for gv in self._config.govee:
+            frames[gv.name] = [(0, 0, 0, 0)] * gv.num_segments
 
         for device_name, port, r, g, b, w in pixel_colors:
             if device_name in frames:
