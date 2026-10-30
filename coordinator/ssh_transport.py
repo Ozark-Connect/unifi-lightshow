@@ -88,8 +88,13 @@ class SwitchConnection:
         self._connected = True
         log.info("[%s] UDP transport ready → %s:%d", self.switch.name, *self._addr)
 
-    async def send_frame(self, colors: list[tuple[int, int, int, int]], brightness: int = 100):
-        """Send a color frame via UDP. The on-switch daemon handles ubus calls."""
+    async def send_frame(self, colors: list[tuple[int, int, int, int]], brightness: int = 100,
+                         force: bool = False):
+        """Send a color frame via UDP. The on-switch daemon handles ubus calls.
+
+        force makes the daemon write every port, including ports it thinks
+        are unchanged.
+        """
         if not self._sock:
             return
 
@@ -97,7 +102,10 @@ class SwitchConnection:
         for r, g, b, w in colors[:self.switch.num_ports]:
             ports.append([r, g, b, w])
 
-        frame = json.dumps({"ports": ports, "brightness": brightness})
+        payload = {"ports": ports, "brightness": brightness}
+        if force:
+            payload["force"] = True
+        frame = json.dumps(payload)
         try:
             self._sock.sendto(frame.encode(), self._addr)
         except OSError as e:
@@ -130,12 +138,13 @@ class SSHTransport:
     async def connect_all(self):
         await asyncio.gather(*(c.connect() for c in self._connections.values()))
 
-    async def send_frames(self, frames: dict[str, list[tuple[int, int, int, int]]], brightness: int = 100):
+    async def send_frames(self, frames: dict[str, list[tuple[int, int, int, int]]], brightness: int = 100,
+                          force: bool = False):
         tasks = []
         for name, colors in frames.items():
             conn = self._connections.get(name)
             if conn:
-                tasks.append(conn.send_frame(colors, brightness))
+                tasks.append(conn.send_frame(colors, brightness, force))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 

@@ -88,6 +88,7 @@ class Config:
     http_port: int = 9199
     udp_port: int = 9200
     max_fps: float = 10.0
+    switch_refresh: float = 5.0
     default_brightness: int = 100
     udp_timeout: float = 5.0
     ssh_keepalive: int = 15
@@ -218,6 +219,8 @@ class Config:
             self.udp_port = data["udp_port"]
         if "max_fps" in data:
             self.max_fps = data["max_fps"]
+        if "switch_refresh" in data:
+            self.switch_refresh = data["switch_refresh"]
         if "brightness" in data:
             self.default_brightness = data["brightness"]
         if "udp_timeout" in data:
