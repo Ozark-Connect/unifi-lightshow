@@ -1,6 +1,6 @@
 # UniFi Lightshow
 
-Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-Pro series). Overrides the built-in Etherlighting LEDs with custom effects, SignalRGB integration, and optional OpenRGB support for ARGB devices.
+Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-Pro series). Overrides the built-in Etherlighting LEDs with custom effects, SignalRGB integration, optional OpenRGB support for ARGB devices, and optional Govee LAN lights.
 
 ## Demo
 
@@ -19,6 +19,7 @@ Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-P
 - Emulates a WLED device so **SignalRGB** controls it natively - no custom plugin needed
 - Falls back to built-in effects (plasma waves, seasonal themes, time-of-day brightness) when SignalRGB isn't streaming
 - Optionally controls OpenRGB ARGB devices (motherboard LEDs, fans, etc.) on the same canvas
+- Optionally drives Govee Wi-Fi lights on the same canvas, and hands them to SignalRGB while it streams
 - Exposes an HTTP API for Home Assistant integration
 
 ## Architecture
@@ -33,6 +34,8 @@ SignalRGB (Windows)                    Home Assistant
     |    Effects | Coalescer | WLED Emu     |
     |              |                        |
     |    UDP :9200 to each switch           |
+    |    OpenRGB SDK :6742 (optional)       |
+    |    Govee LAN API UDP :4003 (optional) |
     +---------------------------------------+
          |                    |
     Switch 1              Switch 2           ...
@@ -200,6 +203,8 @@ POST /ports                - set all ports: {"colors": [[255,0,0,0], ...]}
 POST /govee/movie          - Govee movie flag: {"active": true}
 ```
 
+When Govee devices are configured, `/health` and `/state` include a `govee` object with the movie flag, the ownership state, and the device IPs. Without Govee devices it is `null`.
+
 ## Multi-Switch Spatial Canvas
 
 Multiple switches can be positioned on a 2D canvas. Effects render spatially - a rainbow sweep flows continuously across switches based on their physical position:
@@ -235,7 +240,11 @@ Requires OpenRGB running on the same host as the coordinator.
 
 ## Govee Integration
 
-Add a `govee` list to drive Govee Wi-Fi lights over the Govee LAN API. The coordinator uses the same streaming mode as the SignalRGB Govee addon, so this targets lights that SignalRGB also drives directly:
+This integration is optional. Without a `govee` list in the config, the coordinator sends nothing to Govee devices and `POST /govee/movie` returns 404.
+
+Add a `govee` list to drive Govee Wi-Fi lights over the Govee LAN API. The lights sit on the same canvas as the switches and show the current effect. The coordinator uses the same streaming mode as the SignalRGB Govee addon, so this targets lights that SignalRGB also drives directly. Tested on the H6061 (Glide Hexa panels) and H6168 (TV backlight).
+
+The coordinator decides who owns the lights on every frame:
 
 | SignalRGB streaming to the coordinator | Movie flag | Coordinator does to the Govee lights |
 |---|---|---|
@@ -243,7 +252,40 @@ Add a `govee` list to drive Govee Wi-Fi lights over the Govee LAN API. The coord
 | no | on | Turns them on and streams the current effect. |
 | no | off | Turns them off, and re-sends off every `govee_off_resend` seconds. |
 
-Set the movie flag with `POST /govee/movie` (for example, from a Home Assistant automation). It resets to off when the coordinator restarts, so resend it periodically. After startup the coordinator waits one `udp_timeout` before it touches the lights, so a restart while SignalRGB is streaming does not switch them off.
+The `govee.state` field in `/health` shows the result: `yielded`, `streaming`, or `off`. It is `null` for one `udp_timeout` after startup. During that window the coordinator does not touch the lights, so a restart while SignalRGB is streaming does not switch them off.
+
+### Movie flag
+
+The movie flag tells the coordinator whether to run the effect on the Govee lights while SignalRGB is idle. Tie it to any condition, for example a TV or media player that is playing. Set it with `POST /govee/movie`:
+
+```bash
+curl -X POST http://<coordinator>:9199/govee/movie -d '{"active": true}'
+```
+
+`active` takes a JSON boolean, or one of the strings `"true"`, `"on"`, `"1"` (true) and anything else (false). The flag lives in memory and resets to off when the coordinator restarts, so resend it periodically.
+
+A Home Assistant example that sends the state of a binary sensor on every change and once a minute:
+
+```yaml
+rest_command:
+  lightshow_govee_movie:
+    url: "http://<coordinator>:9199/govee/movie"
+    method: POST
+    content_type: "application/json"
+    payload: '{"active": "{{ states(''binary_sensor.media_playing'') }}"}'
+
+automation:
+  - alias: Lightshow Govee movie sync
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.media_playing
+      - trigger: time_pattern
+        minutes: "/1"
+    actions:
+      - action: rest_command.lightshow_govee_movie
+```
+
+### Govee configuration
 
 ```json
 {
