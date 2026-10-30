@@ -39,6 +39,7 @@ class FrameCoalescer:
         self._brightness: int = config.default_brightness
         self._dirty = False
         self._last_sent: dict[str, list[tuple[int, int, int, int]]] = {}
+        self._switch_last_send = 0.0
 
         # Source tracking
         self._active_source: int = SOURCE_EFFECT
@@ -127,7 +128,13 @@ class FrameCoalescer:
         log.info("Frame coalescer running at %.1f fps max", self._config.max_fps)
 
         while True:
-            if self._dirty and self._frames != self._last_sent:
+            # Resend the current frame now and then, with force set, even when
+            # it hasn't changed. A static frame (off, solid) is otherwise sent
+            # once, so a lost packet, a daemon restart, or etherlightd
+            # repainting its defaults after a reboot would stick.
+            refresh_due = (self._config.switch_refresh > 0 and
+                           time.monotonic() - self._switch_last_send >= self._config.switch_refresh)
+            if (self._dirty and self._frames != self._last_sent) or (refresh_due and self._last_sent):
                 try:
                     # Split frames into switch frames and OpenRGB frames
                     switch_frames = {}
@@ -149,7 +156,10 @@ class FrameCoalescer:
                     # Send to both outputs concurrently
                     tasks = []
                     if switch_frames:
-                        tasks.append(self._transport.send_frames(switch_frames, self._brightness))
+                        tasks.append(self._transport.send_frames(switch_frames, self._brightness,
+                                                                 force=refresh_due))
+                        if refresh_due:
+                            self._switch_last_send = time.monotonic()
                     if openrgb_frame and self._openrgb:
                         tasks.append(self._openrgb.send_frame(openrgb_frame, self._brightness))
 

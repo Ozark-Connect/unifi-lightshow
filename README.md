@@ -91,11 +91,14 @@ Copy `coordinator/switches.example.json` to `coordinator/switches.json` and edit
   "wled_bind_ip": "0.0.0.0",
   "wled_bind_port": 80,
   "max_fps": 8,
+  "switch_refresh": 5.0,
   "brightness": 100,
   "udp_timeout": 5.0,
   "default_effect": "plasma"
 }
 ```
+
+`switch_refresh` is the number of seconds between forced resends of the current frame to the switches. A static frame such as `off` is otherwise sent once. If that packet is lost, or etherlightd repaints its default colors (for example, after a firmware upgrade reboots the switch), the switch keeps the wrong colors. 0 disables the resend.
 
 ### 2. Build the switch daemon
 
