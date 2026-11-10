@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/syscall.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/time.h>
@@ -160,9 +161,38 @@ done:
 
 /* ── Port stats ──────────────────────────────────────────────────────── */
 
+/* ── 32-bit time ABI ─────────────────────────────────────────────────────
+ *
+ * The switch's libc is musl older than 1.2, with 32-bit time_t. A current
+ * musl toolchain builds against 64-bit time_t: clock_gettime links to
+ * __clock_gettime64, which the switch's libc lacks, and SO_RCVTIMEO becomes
+ * the 64-bit variant, which the switch's kernel (4.4) rejects. So time
+ * structs here are declared with 32-bit fields and passed straight to the
+ * kernel (raw syscall, and a setsockopt that the old libc passes through).
+ */
+
+struct timespec32 { long tv_sec; long tv_nsec; };
+struct timeval32 { long tv_sec; long tv_usec; };
+
+/* musl 1.2 renames the 32-bit syscall; older headers use the plain name */
+#ifdef SYS_clock_gettime32
+#define CLOCK_GETTIME32 SYS_clock_gettime32
+#else
+#define CLOCK_GETTIME32 SYS_clock_gettime
+#endif
+
+/* musl 1.2 defines SO_RCVTIMEO as 66 (SO_RCVTIMEO_NEW, 64-bit timeval),
+ * which kernel 4.4 rejects. Use the kernel's original option number:
+ * 0x1006 on MIPS, 20 elsewhere. */
+#if defined(__mips__)
+#define RCVTIMEO_OPT 0x1006
+#else
+#define RCVTIMEO_OPT 20
+#endif
+
 static long long now_ms(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    struct timespec32 ts = {0, 0};
+    syscall(CLOCK_GETTIME32, CLOCK_MONOTONIC, &ts);
     return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
@@ -260,10 +290,9 @@ int main(int argc, char *argv[]) {
 
     /* Use non-blocking recvfrom with a timeout so we can periodically
      * re-assert steady behavior to prevent etherlightd from taking over */
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 100000; /* 100ms timeout */
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct timeval32 tv = {0, 100000}; /* 100ms timeout */
+    if (setsockopt(sock, SOL_SOCKET, RCVTIMEO_OPT, &tv, sizeof(tv)) != 0)
+        perror("setsockopt SO_RCVTIMEO");
 
     int steady_counter = 0;
     #define STEADY_INTERVAL 20 /* re-assert every ~2 seconds (20 * 100ms) */
