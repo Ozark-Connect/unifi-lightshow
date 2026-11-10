@@ -19,6 +19,7 @@ Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-P
 - Emulates a WLED device so **SignalRGB** controls it natively - no custom plugin needed
 - Falls back to built-in effects (plasma waves, seasonal themes, time-of-day brightness) when SignalRGB isn't streaming
 - Optionally controls OpenRGB ARGB devices (motherboard LEDs, fans, etc.) on the same canvas
+- Optionally makes each port react to its own traffic, on top of the effect or SignalRGB scene
 - Exposes an HTTP API for Home Assistant integration
 
 ## Architecture
@@ -197,7 +198,58 @@ POST /effect               - start an effect: {"effect": "plasma"}
 POST /control              - {"action": "stop"} to stop effects
 POST /port                 - set one port: {"port": 1, "r": 255, "g": 0, "b": 0}
 POST /ports                - set all ports: {"colors": [[255,0,0,0], ...]}
+GET  /traffic              - per-port Mbps, utilization, and traffic layer settings
+POST /traffic              - change traffic settings: {"enabled": true, "mode": "boost"} (not saved)
 ```
+
+## Traffic Reactivity
+
+Each port can react to its own traffic, as a layer on top of whatever the show is painting. The effect or SignalRGB scene keeps running.
+
+The switch daemon reads the per-port counters in `/proc/port/<N>` on the switch every 250 ms. It sends them back to the coordinator on the same UDP flow the frames use, as a reply to the last frame's source address and port. Polling never crosses the network, and the reply needs no firewall rule. The coordinator turns the counters into a rate per port, smoothed over about 1 second.
+
+Utilization is log-scaled against the port's own link speed: `u = log(rate / 1 Mbps) / log(link speed / 1 Mbps)`, using the larger of rx and tx. On a 10G port, 100 Mbps is `u = 0.5` and line rate is `u = 1`. A linear scale would leave normal home traffic invisible.
+
+| Mode | What a port shows |
+|---|---|
+| `boost` (default) | The show's own hue. Idle ports sit dimmer and less saturated; full utilization takes the port to full brightness and a more saturated version of the same hue. Brightness steps follow a gamma curve, so magnitude reads across ports |
+| `brightness` | The show's color, brightness scaled by utilization |
+| `tint` | The show's color blended toward `heat_color` |
+| `replace` | `idle_color` to `heat_color` by utilization; the show is ignored |
+
+Ports without link stay dark: the LED MCU blanks them whatever color it receives.
+
+```json
+{
+  "traffic": {
+    "enabled": true,
+    "mode": "boost",
+    "sources": ["effect", "http", "signalrgb"],
+    "relative": false,
+    "idle_value": 0.3,
+    "idle_saturation": 0.7
+  }
+}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Apply the layer. Stats flow either way, so `GET /traffic` always works |
+| `mode` | `boost` | See the table above |
+| `sources` | all | Which frame sources get the layer: `effect`, `http`, `signalrgb` |
+| `floor_mbps` | `1.0` | Rate that maps to `u = 0` |
+| `relative` | `false` | Divide every port by the busiest port (while the busiest is above `relative_min`, 0.1), so the busiest always reaches full |
+| `smoothing` | `1.0` | Rate smoothing time constant, seconds |
+| `idle_value`, `idle_saturation` | `0.3`, `0.7` | `boost`: idle brightness and saturation, as fractions of the show's |
+| `saturation_boost` | `0.5` | `boost`: how far full utilization pushes saturation toward 1 |
+| `gamma` | `2.2` | Brightness curve for `boost` and `brightness` |
+| `brightness_floor` | `0.15` | `brightness`: idle brightness as a fraction of the show's |
+| `heat_color`, `idle_color` | red, blue | `tint` and `replace` colors |
+| `stale_after` | `3.0` | Seconds without stats before a switch falls back to the plain show |
+
+Cost on the switch: one 400-byte packet out every 250 ms, and nothing in. The switch CPU path accepts only about 100 packets/s inbound (see [RESEARCH.md](RESEARCH.md)), so a stats source that polled the switch over the network would spend that budget. Traffic changes are also color changes, which add `port_rgb` calls; the daemon's color threshold and the smoothing keep those bounded.
+
+Set the daemon's second argument to `0` to turn stats off on a switch: `etherlightd_udp 9200 0`.
 
 ## Multi-Switch Spatial Canvas
 

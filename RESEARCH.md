@@ -166,22 +166,58 @@ switch.etherlight.mode.2.color.1.code=5eff14
 # ... etc
 ```
 
-## Integration Strategy
+## Switch CPU Path Limit
 
-### For Home Assistant
-1. SSH command execution via `shell_command` or custom component
-2. Call `ubus call etherlight.mcu set '{"led_stop":"stop"}'` to take control
-3. Set per-port colors with `port_pwm` commands
-4. Call `led_stop: start` to return control to etherlightd
+Traffic addressed to the switch itself (SSH, UDP frames, SNMP, iperf3) reaches the CPU through
+an internal port with a hardware rate limit of roughly **100 packets/s inbound**. Routed and
+switched traffic never touches it; the switch chip forwards that at line rate.
 
-### For SignalRGB
-1. Create a SignalRGB plugin that sends SSH commands
-2. Map the 10 ports as a 10-pixel LED strip
-3. Each pixel = RGBW + brightness
+Measured 2026-10-20 on a USW-Pro-XG-8-PoE (`US3.rtl93xx_7.5.15`), with a static iperf3 3.18 built
+for big-endian MIPS32r2 soft-float musl, client on a host one hop away:
 
-### Key Considerations
+| Test | Result |
+|---|---|
+| TCP, host to switch | 1.04 Mbit/s, 79 retransmits |
+| TCP, switch to host (`-R`) | 2.73 Mbit/s |
+| UDP offered at 20 Mbit/s | 1.13 Mbit/s received, 94% loss, ~100 packets/s |
+| Switch CPU during the UDP test | 81% idle |
+
+The CPU was mostly idle, so the limit is a policer, not CPU exhaustion. The switch `cli` has
+`show cpu input rate` (7 pps at idle) but no command to change the limit; it lives in the Realtek
+SDK driver (`rtk.ko`). Inform, STP, LLDP, and SSH share this budget with anything a light show sends.
+
+## Transport Approaches
+
+| Approach | Result |
+|---|---|
+| SSH + shell `ubus call` CLI per port (`system()`) | 36% CPU idle, load 1.6, at only 3fps |
+| Persistent SSH session, `ubus call` per port | Not measured. Removes connect cost, but every `ubus call` still forks the CLI and reconnects to ubusd. Over TCP, a policer drop stalls every queued command behind a retransmit (≥200 ms), and the sender has no signal that the switch is behind |
+| `etherlightd_udp`: resident C process, `libubus` in-process, UDP frames | 90% CPU idle, load 0.86, at 8fps; one inbound packet per frame per switch |
+
+UDP fits a light stream: the newest frame wins, and a lost frame is replaced by the next one (plus
+the coordinator's `switch_refresh` resend for static frames). SSH is used only to bootstrap the daemon.
+
+`port_pwm` (SFP+ only) and `led_stop` (blacks out the display) were tried and rejected; see above.
+
+## Port Counters (`/proc/port/<N>`)
+
+One line of comma-separated `key=value` per port, ~590 bytes. Fields used for traffic reactivity:
+`link` (`up`/`down`), `speed` (Mbps; a down port reports `10`), `rx_byte`, `tx_byte`. Byte
+counters are 64-bit (a 10G port read `rx_byte=4035765958502`). `/proc/port/1..10` matches LED
+ports 1-10; 9 and 10 are the SFP+ ports. `/proc/port/all` and `/proc/port/cpu` also exist.
+`swctrl port show counters` can read all zeros; `/proc/port` is the reliable source.
+
+## Down Ports
+
+The MCU blanks a port without link, RJ45 and SFP+ alike, whatever `port_rgb` writes.
+
+Unverified, reported elsewhere: `mcu_mode: "soc_port_map steady 0 100"` (port 9) and
+`"soc_port_map steady 0 200"` (port 10) put the SFP+ LEDs in a direct-output mode that lights them
+without link. Not used here. `mcu_mode` is untested, and `led_mode` / `mode_color` in the same
+API corrupt MCU state (see above).
+
+## Notes
+
 - Colors are **not persistent** across reboots (etherlightd reinitializes from system.cfg)
-- `led_stop: stop` must be called first or etherlightd will overwrite custom colors
-- The MCU communicates via I2C, so there's inherent latency (~5-20ms per command)
-- Rapid-fire ubus calls work but each is a separate I2C transaction
-- For smooth animations, batch all 10 port updates quickly then sleep
+- The MCU communicates via I2C, so each `port_rgb` has latency (~5-20 ms per command)
+- Each ubus call is a separate I2C transaction; the daemon sends only ports whose color changed

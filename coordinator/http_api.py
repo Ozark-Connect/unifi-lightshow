@@ -9,6 +9,7 @@ from frame_coalescer import FrameCoalescer, SOURCE_HTTP
 from effects import EffectEngine
 from ssh_transport import SSHTransport
 from config import Config
+from traffic import TrafficMonitor
 
 log = logging.getLogger(__name__)
 
@@ -18,13 +19,17 @@ def create_app(
     effects: EffectEngine,
     transport: SSHTransport,
     config: Config,
+    traffic: TrafficMonitor | None = None,
 ) -> web.Application:
     app = web.Application()
     app["coalescer"] = coalescer
     app["effects"] = effects
     app["transport"] = transport
     app["config"] = config
+    app["traffic"] = traffic
     app["start_time"] = time.monotonic()
+    app.router.add_get("/traffic", traffic_get)
+    app.router.add_post("/traffic", traffic_set)
 
     app.router.add_get("/health", health)
     app.router.add_get("/state", state)
@@ -34,6 +39,42 @@ def create_app(
     app.router.add_post("/effect", effect)
 
     return app
+
+
+def _traffic_status(monitor: TrafficMonitor) -> dict:
+    return {
+        "config": monitor.cfg.to_dict(),
+        "packets": monitor.packets,
+        "bad_packets": monitor.bad_packets,
+        "switches": monitor.snapshot(),
+    }
+
+
+async def traffic_get(request: web.Request) -> web.Response:
+    """Per-port rates and utilization, plus the traffic layer settings."""
+    monitor: TrafficMonitor | None = request.app["traffic"]
+    if not monitor:
+        return web.json_response({"error": "traffic monitor not running"}, status=404)
+    return web.json_response(_traffic_status(monitor))
+
+
+async def traffic_set(request: web.Request) -> web.Response:
+    """Change traffic layer settings, e.g. {"enabled": true, "mode": "boost"}. Not persisted."""
+    monitor: TrafficMonitor | None = request.app["traffic"]
+    if not monitor:
+        return web.json_response({"error": "traffic monitor not running"}, status=404)
+    try:
+        body = await request.json()
+    except ValueError:
+        return web.json_response({"error": "body must be JSON"}, status=400)
+    if not isinstance(body, dict):
+        return web.json_response({"error": "body must be a JSON object"}, status=400)
+    try:
+        monitor.cfg.update(body)
+    except (ValueError, TypeError) as e:
+        return web.json_response({"error": str(e)}, status=400)
+    request.app["coalescer"].mark_dirty()
+    return web.json_response(_traffic_status(monitor))
 
 
 async def health(request: web.Request) -> web.Response:

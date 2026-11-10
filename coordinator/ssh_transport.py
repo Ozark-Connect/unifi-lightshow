@@ -36,6 +36,9 @@ class SwitchConnection:
         self._addr: tuple[str, int] = (switch.host, 9200)
         self._connected = False
         self._last_colors: list[str | None] = [None] * switch.num_ports
+        # Called with (switch name, packet) for each port stats packet the
+        # daemon sends back on this socket
+        self.on_stats = None
 
     @property
     def connected(self) -> bool:
@@ -83,10 +86,29 @@ class SwitchConnection:
         except Exception as e:
             log.warning("[%s] SSH bootstrap failed (daemon may already be running): %s", self.switch.name, e)
 
-        # Open UDP socket
+        # Open UDP socket. The daemon sends port stats back to the address
+        # and port our frames come from, so the same socket receives them.
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.setblocking(False)
+        asyncio.get_running_loop().add_reader(self._sock.fileno(), self._on_readable)
         self._connected = True
         log.info("[%s] UDP transport ready → %s:%d", self.switch.name, *self._addr)
+
+    def _on_readable(self):
+        while self._sock:
+            try:
+                data, _ = self._sock.recvfrom(4096)
+            except (BlockingIOError, InterruptedError):
+                return
+            except OSError as e:
+                # ICMP port unreachable from a stopped daemon lands here
+                log.debug("[%s] UDP recv failed: %s", self.switch.name, e)
+                return
+            if self.on_stats:
+                try:
+                    self.on_stats(self.switch.name, data)
+                except Exception as e:
+                    log.warning("[%s] Stats handler failed: %s", self.switch.name, e)
 
     async def send_frame(self, colors: list[tuple[int, int, int, int]], brightness: int = 100,
                          force: bool = False):
@@ -114,6 +136,7 @@ class SwitchConnection:
 
     async def close(self):
         if self._sock:
+            asyncio.get_running_loop().remove_reader(self._sock.fileno())
             self._sock.close()
             self._sock = None
             self._connected = False
@@ -134,6 +157,11 @@ class SSHTransport:
 
     def all_connected(self) -> bool:
         return all(c.connected for c in self._connections.values())
+
+    def set_stats_handler(self, handler):
+        """handler(switch name, packet) receives each port stats packet."""
+        for c in self._connections.values():
+            c.on_stats = handler
 
     async def connect_all(self):
         await asyncio.gather(*(c.connect() for c in self._connections.values()))

@@ -13,6 +13,7 @@ from openrgb_output import OpenRGBOutput
 from frame_coalescer import FrameCoalescer
 from effects import EffectEngine
 from http_api import create_app
+from traffic import TrafficMonitor
 from udp_listener import start_udp_listener
 from wled_emulator import create_wled_routes, start_wled_udp
 
@@ -48,12 +49,18 @@ async def main():
             log.warning("OpenRGB connect failed, continuing without it: %s", e)
             openrgb = None
 
+    # Port traffic from the switch daemons. Stats flow whether or not the
+    # layer is enabled, so GET /traffic works and POST /traffic can turn it on.
+    traffic = TrafficMonitor(config.traffic, {s.name: s.num_ports for s in config.switches})
+    transport.set_stats_handler(traffic.feed)
+    log.info("Traffic layer: %s (mode %s)", "on" if config.traffic.enabled else "off", config.traffic.mode)
+
     # Set up frame coalescer and effects
-    coalescer = FrameCoalescer(transport, openrgb, config)
+    coalescer = FrameCoalescer(transport, openrgb, config, traffic=traffic)
     effects = EffectEngine(coalescer, canvas, config)
 
     # Set up HTTP API + WLED emulation endpoints
-    app = create_app(coalescer, effects, transport, config)
+    app = create_app(coalescer, effects, transport, config, traffic=traffic)
     create_wled_routes(app, coalescer, config)
     runner = web.AppRunner(app)
     await runner.setup()

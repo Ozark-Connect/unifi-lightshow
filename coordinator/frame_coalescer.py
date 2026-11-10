@@ -7,6 +7,7 @@ import time
 from ssh_transport import SSHTransport
 from openrgb_output import OpenRGBOutput
 from config import Config
+from traffic import TrafficMonitor, apply_layer
 
 log = logging.getLogger(__name__)
 
@@ -23,10 +24,14 @@ class FrameCoalescer:
     Devices include both UniFi switches and OpenRGB.
     """
 
-    def __init__(self, transport: SSHTransport, openrgb: OpenRGBOutput | None, config: Config):
+    def __init__(self, transport: SSHTransport, openrgb: OpenRGBOutput | None, config: Config,
+                 traffic: TrafficMonitor | None = None):
         self._transport = transport
         self._openrgb = openrgb
         self._config = config
+        self._traffic = traffic
+        if traffic:
+            traffic.on_change = self.mark_dirty
         self._interval = 1.0 / config.max_fps
 
         # Per-device current frame state
@@ -69,6 +74,20 @@ class FrameCoalescer:
     @property
     def brightness(self) -> int:
         return self._brightness
+
+    def mark_dirty(self):
+        """Recompute the output on the next tick, e.g. when traffic changed."""
+        self._dirty = True
+
+    def _apply_traffic(self, frames: dict[str, list[tuple[int, int, int, int]]]):
+        """Apply the traffic layer to switch frames, in place on a snapshot."""
+        t = self._traffic
+        if not t or not t.cfg.enabled or self.active_source_name not in t.cfg.sources:
+            return
+        for sw in self._config.switches:
+            utils = t.utils(sw.name)
+            if utils is not None and sw.name in frames:
+                frames[sw.name] = apply_layer(frames[sw.name], utils, t.cfg)
 
     def _udp_active(self) -> bool:
         return (time.monotonic() - self._udp_last_seen) < self._config.udp_timeout
@@ -134,7 +153,7 @@ class FrameCoalescer:
             # repainting its defaults after a reboot would stick.
             refresh_due = (self._config.switch_refresh > 0 and
                            time.monotonic() - self._switch_last_send >= self._config.switch_refresh)
-            if (self._dirty and self._frames != self._last_sent) or (refresh_due and self._last_sent):
+            if self._dirty or (refresh_due and self._last_sent):
                 try:
                     # Split frames into switch frames and OpenRGB frames
                     switch_frames = {}
@@ -146,6 +165,13 @@ class FrameCoalescer:
                     # recorded as sent.
                     snapshot = {k: list(v) for k, v in self._frames.items()}
                     self._dirty = False
+
+                    # _last_sent holds what went out, after the traffic layer,
+                    # so a traffic change alone is a change worth sending.
+                    self._apply_traffic(snapshot)
+                    if snapshot == self._last_sent and not refresh_due:
+                        await asyncio.sleep(self._interval)
+                        continue
 
                     for name, colors in snapshot.items():
                         if name == orgb_name:

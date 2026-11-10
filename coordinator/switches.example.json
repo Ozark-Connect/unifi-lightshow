@@ -18,6 +18,10 @@
     "y": 2.0,
     "led_spacing": 1.0
   },
+  "traffic": {
+    "enabled": false,
+    "mode": "boost"
+  },
   "wled_bind_ip": "0.0.0.0",
   "wled_bind_port": 80,
   "max_fps": 8,

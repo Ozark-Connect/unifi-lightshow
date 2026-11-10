@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from traffic import TrafficConfig
+
 
 @dataclass
 class SwitchConfig:
@@ -50,6 +52,7 @@ class Config:
     default_effect: str | None = "plasma"
     wled_bind_ip: str = "0.0.0.0"
     wled_bind_port: int = 80
+    traffic: TrafficConfig = field(default_factory=TrafficConfig)
 
     @property
     def total_ports(self) -> int:
@@ -143,3 +146,5 @@ class Config:
             self.wled_bind_ip = data["wled_bind_ip"]
         if "wled_bind_port" in data:
             self.wled_bind_port = data["wled_bind_port"]
+        if "traffic" in data:
+            self.traffic = TrafficConfig.from_dict(data["traffic"])

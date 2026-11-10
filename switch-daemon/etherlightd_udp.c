@@ -4,6 +4,14 @@
  * Uses libubus C API directly — no shell/fork overhead.
  * Receives JSON color frames via UDP, calls ubus_invoke for each changed port.
  *
+ * Port stats: every STATS_INTERVAL_MS it reads /proc/port/<N> and sends one
+ * line back to the address and port the last frame came from:
+ *   S1 <seq> <ms> <link>:<speed>:<rx_byte>:<tx_byte> ... (one field per port)
+ * ms is CLOCK_MONOTONIC in milliseconds; speed is in Mbps; counters are
+ * raw 64-bit byte counts. Replying to the frame's own source keeps the flow
+ * inside the conntrack entry the frames created, so no firewall rule is needed.
+ * Stats stop when no frame has arrived for STATS_IDLE_MS.
+ *
  * Build:
  *   /tmp/mips-linux-muslsf-cross/bin/mips-linux-muslsf-gcc \
  *       -O2 -Wl,--dynamic-linker=/lib/ld-musl-mips-sf.so.1 \
@@ -13,13 +21,17 @@
  * Run:
  *   LD_PRELOAD="/lib/libubus.so.20231128 /lib/libubox.so.20240329 \
  *     /lib/libblobmsg_jansson.so.20240329 /lib/libjansson.so.4 \
- *     /lib/libz.so.1" ./etherlightd_udp [port]
+ *     /lib/libz.so.1" ./etherlightd_udp [port] [stats]
+ *
+ * stats: 1 (default) sends port stats, 0 disables them.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/time.h>
@@ -29,6 +41,8 @@
 #define BUF_SIZE 2048
 #define DEFAULT_PORT 9200
 #define COLOR_THRESHOLD 4  /* skip port update if R/G/B each changed by less than this */
+#define STATS_INTERVAL_MS 250
+#define STATS_IDLE_MS 10000
 
 /* ── Minimal libubox/libubus ABI declarations ──────────────────────────
  *
@@ -144,11 +158,62 @@ done:
     return port;
 }
 
+/* ── Port stats ──────────────────────────────────────────────────────── */
+
+static long long now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/* Value of "key=" in a /proc/port line, or NULL. Keys are matched at the
+ * start of the line or after a comma, so "rx_byte" never matches "trx_byte". */
+static const char *field(const char *line, const char *key) {
+    size_t klen = strlen(key);
+    const char *p = line;
+    while (p && *p) {
+        if (strncmp(p, key, klen) == 0 && p[klen] == '=')
+            return p + klen + 1;
+        p = strchr(p, ',');
+        if (p) p++;
+    }
+    return NULL;
+}
+
+/* Append "<link>:<speed>:<rx>:<tx>" for one port to out. Returns bytes written. */
+static int read_port(int n, char *out, size_t cap) {
+    char path[32], line[1024];
+    snprintf(path, sizeof(path), "/proc/port/%d", n);
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return snprintf(out, cap, " 0:0:0:0");
+    ssize_t len = read(fd, line, sizeof(line) - 1);
+    close(fd);
+    if (len <= 0) return snprintf(out, cap, " 0:0:0:0");
+    line[len] = '\0';
+
+    const char *v;
+    int link = (v = field(line, "link")) && strncmp(v, "up", 2) == 0;
+    int speed = (v = field(line, "speed")) ? atoi(v) : 0;
+    unsigned long long rx = (v = field(line, "rx_byte")) ? strtoull(v, NULL, 10) : 0;
+    unsigned long long tx = (v = field(line, "tx_byte")) ? strtoull(v, NULL, 10) : 0;
+    return snprintf(out, cap, " %d:%d:%llu:%llu", link, speed, rx, tx);
+}
+
+static void send_stats(int sock, const struct sockaddr_in *to, unsigned int seq, int num_ports) {
+    char pkt[BUF_SIZE];
+    int len = snprintf(pkt, sizeof(pkt), "S1 %u %lld", seq, now_ms());
+    for (int i = 1; i <= num_ports && len < (int)sizeof(pkt); i++)
+        len += read_port(i, pkt + len, sizeof(pkt) - len);
+    if (len >= (int)sizeof(pkt)) return;
+    sendto(sock, pkt, len, 0, (const struct sockaddr *)to, sizeof(*to));
+}
+
 /* ── Main ────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[]) {
     int port = DEFAULT_PORT;
     if (argc > 1) port = atoi(argv[1]);
+    int stats_enabled = argc > 2 ? atoi(argv[2]) != 0 : 1;
 
     /* Connect to ubus */
     ctx = ubus_connect(NULL);
@@ -203,14 +268,29 @@ int main(int argc, char *argv[]) {
     int steady_counter = 0;
     #define STEADY_INTERVAL 20 /* re-assert every ~2 seconds (20 * 100ms) */
 
+    struct sockaddr_in peer;
+    int have_peer = 0;
+    long long last_frame_ms = 0, last_stats_ms = 0;
+    unsigned int stats_seq = 0;
+
     while (1) {
-        ssize_t n = recvfrom(sock, buf, BUF_SIZE - 1, 0, NULL, NULL);
+        struct sockaddr_in from;
+        socklen_t fromlen = sizeof(from);
+        ssize_t n = recvfrom(sock, buf, BUF_SIZE - 1, 0, (struct sockaddr *)&from, &fromlen);
+        long long now = now_ms();
 
         /* Periodically re-assert steady to suppress etherlightd animations */
         steady_counter++;
         if (steady_counter >= STEADY_INTERVAL) {
             ubus_set("behavior", "steady");
             steady_counter = 0;
+        }
+
+        /* Stats go to whoever sent the last frame, while frames keep coming */
+        if (stats_enabled && have_peer && now - last_frame_ms < STATS_IDLE_MS &&
+            now - last_stats_ms >= STATS_INTERVAL_MS) {
+            send_stats(sock, &peer, stats_seq++, MAX_PORTS);
+            last_stats_ms = now;
         }
 
         if (n <= 0) continue;
@@ -222,6 +302,10 @@ int main(int argc, char *argv[]) {
 
         int num_ports = parse_frame(buf, &brightness);
         if (num_ports == 0) continue;
+
+        peer = from;
+        have_peer = 1;
+        last_frame_ms = now;
 
         /* "force": true writes every port, so the coordinator's periodic
          * refresh can repaint ports that etherlightd changed behind our back */
