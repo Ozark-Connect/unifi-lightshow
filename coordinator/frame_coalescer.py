@@ -79,15 +79,21 @@ class FrameCoalescer:
         """Recompute the output on the next tick, e.g. when traffic changed."""
         self._dirty = True
 
-    def _apply_traffic(self, frames: dict[str, list[tuple[int, int, int, int]]]):
-        """Apply the traffic layer to switch frames, in place on a snapshot."""
+    def _output_snapshot(self) -> dict[str, list[tuple[int, int, int, int]]]:
+        """Copy of the current frames with the traffic layer applied to switch frames.
+
+        Copy before awaiting: the effect task can replace self._frames
+        mid-send, and that newer frame must not be recorded as sent.
+        """
+        frames = {k: list(v) for k, v in self._frames.items()}
         t = self._traffic
         if not t or not t.cfg.enabled or self.active_source_name not in t.cfg.sources:
-            return
+            return frames
         for sw in self._config.switches:
             utils = t.utils(sw.name)
             if utils is not None and sw.name in frames:
                 frames[sw.name] = apply_layer(frames[sw.name], utils, t.cfg)
+        return frames
 
     def _udp_active(self) -> bool:
         return (time.monotonic() - self._udp_last_seen) < self._config.udp_timeout
@@ -153,25 +159,22 @@ class FrameCoalescer:
             # repainting its defaults after a reboot would stick.
             refresh_due = (self._config.switch_refresh > 0 and
                            time.monotonic() - self._switch_last_send >= self._config.switch_refresh)
-            if self._dirty or (refresh_due and self._last_sent):
+            # _last_sent holds what went out, after the traffic layer, so a
+            # traffic change alone is a change worth sending.
+            snapshot = None
+            if self._dirty:
+                self._dirty = False
+                snapshot = self._output_snapshot()
+            changed = snapshot is not None and snapshot != self._last_sent
+            if changed or (refresh_due and self._last_sent):
                 try:
+                    if snapshot is None:
+                        snapshot = self._output_snapshot()
+
                     # Split frames into switch frames and OpenRGB frames
                     switch_frames = {}
                     openrgb_frame = None
                     orgb_name = self._config.openrgb.name if self._config.openrgb_enabled else None
-
-                    # Snapshot before awaiting: the effect task can replace
-                    # self._frames mid-send, and that newer frame must not be
-                    # recorded as sent.
-                    snapshot = {k: list(v) for k, v in self._frames.items()}
-                    self._dirty = False
-
-                    # _last_sent holds what went out, after the traffic layer,
-                    # so a traffic change alone is a change worth sending.
-                    self._apply_traffic(snapshot)
-                    if snapshot == self._last_sent and not refresh_due:
-                        await asyncio.sleep(self._interval)
-                        continue
 
                     for name, colors in snapshot.items():
                         if name == orgb_name:
