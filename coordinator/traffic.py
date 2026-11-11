@@ -46,6 +46,10 @@ class TrafficConfig:
     gamma: float = 2.2
     # brightness: idle floor as a fraction of the show's V
     brightness_floor: float = 0.15
+    # boost and brightness: an idle port never drops below this absolute V,
+    # so dim scenes keep idle ports visible. Capped at the show's own V, so
+    # idle is never brighter than the show and black stays black.
+    min_value: float = 0.10
     # tint / replace colors
     heat_color: tuple[int, int, int] = (255, 0, 0)
     idle_color: tuple[int, int, int] = (0, 0, 255)
@@ -80,7 +84,7 @@ class TrafficConfig:
             raise ValueError(f"traffic: unknown sources {bad}, expected {SOURCES}")
         if self.floor_mbps <= 0:
             raise ValueError("traffic: floor_mbps must be > 0")
-        for key in ("idle_saturation", "idle_value", "saturation_boost", "brightness_floor"):
+        for key in ("idle_saturation", "idle_value", "saturation_boost", "brightness_floor", "min_value"):
             if not 0.0 <= getattr(self, key) <= 1.0:
                 raise ValueError(f"traffic: {key} must be 0-1")
         if self.gamma <= 0:
@@ -235,6 +239,11 @@ def _perceptual_lerp(a: float, b: float, t: float, gamma: float) -> float:
     return _lerp(a ** (1 / gamma), b ** (1 / gamma), t) ** gamma
 
 
+def _idle_floor(v: float, fraction: float, min_value: float) -> float:
+    """Idle V: a fraction of the show's V, but at least min_value (never above v)."""
+    return max(v * fraction, min(v, min_value))
+
+
 def _rgb(h: float, s: float, v: float) -> tuple[int, int, int]:
     r, g, b = colorsys.hsv_to_rgb(h, s, v)
     return round(r * 255), round(g * 255), round(b * 255)
@@ -255,14 +264,14 @@ def apply_layer(colors: list[tuple[int, int, int, int]], utils: list[float],
             if v < 0.02:  # black has no hue to boost
                 out.append((r, g, b, w))
                 continue
-            idle_v, full_v = v * cfg.idle_value, 1.0
+            idle_v, full_v = _idle_floor(v, cfg.idle_value, cfg.min_value), 1.0
             idle_s, full_s = s * cfg.idle_saturation, s + (1 - s) * cfg.saturation_boost
             nv = _perceptual_lerp(idle_v, full_v, u, cfg.gamma)
             ns = _lerp(idle_s, full_s, u)
             out.append((*_rgb(h, ns, nv), w))
 
         elif cfg.mode == "brightness":
-            nv = _perceptual_lerp(v * cfg.brightness_floor, v, u, cfg.gamma)
+            nv = _perceptual_lerp(_idle_floor(v, cfg.brightness_floor, cfg.min_value), v, u, cfg.gamma)
             out.append((*_rgb(h, s, nv), w))
 
         elif cfg.mode == "tint":

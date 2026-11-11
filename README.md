@@ -252,6 +252,7 @@ Ports without link stay dark: the LED MCU blanks them whatever color it receives
 | `saturation_boost` | `0.5` | `boost`: how far full utilization pushes saturation toward 1 |
 | `gamma` | `2.2` | Brightness curve for `boost` and `brightness` |
 | `brightness_floor` | `0.15` | `brightness`: idle brightness as a fraction of the show's |
+| `min_value` | `0.10` | `boost` and `brightness`: lowest idle brightness, so idle ports stay visible over dim scenes. Never above the show's own brightness; black stays black |
 | `heat_color`, `idle_color` | red, blue | `tint` and `replace` colors |
 | `stale_after` | `3.0` | Seconds without stats before a switch falls back to the plain show |
 
