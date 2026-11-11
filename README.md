@@ -1,6 +1,6 @@
 # UniFi Lightshow
 
-Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-Pro series). Overrides the built-in Etherlighting LEDs with custom effects, SignalRGB integration, and optional OpenRGB support for ARGB devices.
+Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-Pro series). Overrides the built-in Etherlighting LEDs with custom effects, SignalRGB integration, optional OpenRGB support for ARGB devices, and optional Govee LAN lights.
 
 ## Demo
 
@@ -19,6 +19,7 @@ Custom RGB light show controller for UniFi Etherlighting-enabled switches (USW-P
 - Emulates a WLED device so **SignalRGB** controls it natively - no custom plugin needed
 - Falls back to built-in effects (plasma waves, seasonal themes, time-of-day brightness) when SignalRGB isn't streaming
 - Optionally controls OpenRGB ARGB devices (motherboard LEDs, fans, etc.) on the same canvas
+- Optionally drives Govee Wi-Fi lights on the same canvas, and hands them to SignalRGB while it streams
 - Optionally makes each port react to its own traffic, on top of the effect or SignalRGB scene
 - Exposes an HTTP API for Home Assistant integration
 
@@ -34,6 +35,8 @@ SignalRGB (Windows)                    Home Assistant
     |    Effects | Coalescer | WLED Emu     |
     |              |                        |
     |    UDP :9200 to each switch           |
+    |    OpenRGB SDK :6742 (optional)       |
+    |    Govee LAN API UDP :4003 (optional) |
     +---------------------------------------+
          |                    |
     Switch 1              Switch 2           ...
@@ -84,7 +87,7 @@ Copy `coordinator/switches.example.json` to `coordinator/switches.json` and edit
   "switches": [
     {
       "name": "my-switch",
-      "host": "192.168.1.10",
+      "host": "10.42.1.10",
       "user": "your-ssh-username",
       "num_ports": 10
     }
@@ -198,9 +201,12 @@ POST /effect               - start an effect: {"effect": "plasma"}
 POST /control              - {"action": "stop"} to stop effects
 POST /port                 - set one port: {"port": 1, "r": 255, "g": 0, "b": 0}
 POST /ports                - set all ports: {"colors": [[255,0,0,0], ...]}
+POST /govee/movie          - Govee movie flag: {"active": true}
 GET  /traffic              - per-port Mbps, utilization, and traffic layer settings
 POST /traffic              - change traffic settings: {"enabled": true, "mode": "boost"} (not saved)
 ```
+
+When Govee devices are configured, `/health` and `/state` include a `govee` object with the movie flag, the ownership state, and the device IPs. Without Govee devices it is `null`.
 
 ## Traffic Reactivity
 
@@ -251,6 +257,8 @@ Cost on the switch: one 400-byte packet out every 250 ms, and nothing in. The sw
 
 Set the daemon's second argument to `0` to turn stats off on a switch: `etherlightd_udp 9200 0`.
 
+Govee lights are not switch ports, so the traffic layer never changes them.
+
 ## Multi-Switch Spatial Canvas
 
 Multiple switches can be positioned on a 2D canvas. Effects render spatially - a rainbow sweep flows continuously across switches based on their physical position:
@@ -283,6 +291,97 @@ Add an `openrgb` section to your config to include ARGB devices on the same canv
 ```
 
 Requires OpenRGB running on the same host as the coordinator.
+
+## Govee Integration
+
+This integration is optional. Without a `govee` list in the config, the coordinator sends nothing to Govee devices and `POST /govee/movie` returns 404.
+
+Add a `govee` list to drive Govee Wi-Fi lights over the Govee LAN API. The lights sit on the same canvas as the switches and show the current effect. The coordinator uses the same streaming mode as the SignalRGB Govee addon, so this targets lights that SignalRGB also drives directly. Tested on the H6061 (Glide Hexa panels) and H6168 (TV backlight).
+
+The coordinator decides who owns the lights on every frame:
+
+| SignalRGB streaming to the coordinator | Movie flag | Coordinator does to the Govee lights |
+|---|---|---|
+| yes | any | Nothing. SignalRGB owns them. |
+| no | on | Turns them on and streams the current effect. |
+| no | off | Turns them off, and re-sends off every `govee_off_resend` seconds. |
+
+The `govee.state` field in `/health` shows the result: `yielded`, `streaming`, or `off`. It is `null` for one `udp_timeout` after startup. During that window the coordinator does not touch the lights, so a restart while SignalRGB is streaming does not switch them off.
+
+### Movie flag
+
+The movie flag tells the coordinator whether to run the effect on the Govee lights while SignalRGB is idle. Tie it to any condition, for example a TV or media player that is playing. Set it with `POST /govee/movie`:
+
+```bash
+curl -X POST http://<coordinator>:9199/govee/movie -d '{"active": true}'
+```
+
+`active` takes a JSON boolean, or one of the strings `"true"`, `"on"`, `"1"` (true) and anything else (false). The flag lives in memory and resets to off when the coordinator restarts, so resend it periodically.
+
+A Home Assistant example that sends the state of a binary sensor on every change and once a minute:
+
+```yaml
+rest_command:
+  lightshow_govee_movie:
+    url: "http://<coordinator>:9199/govee/movie"
+    method: POST
+    content_type: "application/json"
+    payload: '{"active": "{{ states(''binary_sensor.media_playing'') }}"}'
+
+automation:
+  - alias: Lightshow Govee movie sync
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.media_playing
+      - trigger: time_pattern
+        minutes: "/1"
+    actions:
+      - action: rest_command.lightshow_govee_movie
+```
+
+### Govee configuration
+
+```json
+{
+  "govee": [
+    {
+      "name": "hexa",
+      "ip": "10.42.1.60",
+      "num_segments": 15,
+      "shape": "path",
+      "path": [[2.0, 8.5], [3.2, 8.5], [4.6, 8.3], [6.2, 8.8], [6.2, 10.4]]
+    },
+    {
+      "name": "tv",
+      "ip": "10.42.1.61",
+      "num_segments": 10,
+      "shape": "loop",
+      "rect": [6.5, 8.2, 15.5, 13.7],
+      "start_edge": "bottom",
+      "start": 0.4,
+      "direction": "ccw"
+    }
+  ],
+  "govee_keepalive": 1.0,
+  "govee_off_resend": 3.0
+}
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `name`, `ip` | required | Device name on the canvas and its LAN IP. LAN Control must be enabled in the Govee app. |
+| `num_segments` | 15 | Colors sent per frame. The device stretches them across its physical LEDs, so this sets canvas resolution, not a hardware count. |
+| `brightness` | 100 | Percent of the coordinator brightness, to balance a bright device against the switches. |
+| `protocol` | `dreamview` | `dreamview` or `razer`. Use whichever the SignalRGB Govee addon uses for the SKU. |
+| `shape` | `strip` | `strip`: a straight line from `x`, `y` with `rotation` and `led_spacing`. `path`: segments spaced evenly along the `path` polyline, segment 0 on the first point. `loop`: segments spaced evenly around the `rect` perimeter (`[x0, y0, x1, y1]`, y increases downward). |
+| `start_edge`, `start` | `bottom`, 0.0 | Loop only. Segment 0 sits at fraction `start` along `start_edge`, measured in the travel direction. |
+| `direction` | `ccw` | Loop only. Travel direction as seen facing the device. `ccw` runs left to right along the bottom. |
+| `govee_keepalive` | 1.0 | Seconds between frame resends while streaming. Govee lights leave streaming mode when frames stop. |
+| `govee_off_resend` | 3.0 | Seconds between off commands while holding the lights off. Govee lights can power themselves back on (for example, when SignalRGB's addon leaves streaming mode on exit), so a short interval keeps any flash brief. 0 disables the resend. |
+
+To find a device's segment order, light one segment at a time and note where it appears.
+
+Govee segments are not counted in the WLED LED count, so adding a Govee device does not change what SignalRGB sees. The coordinator only sends to UDP 4003 and never binds 4002 (the Govee reply port), so it runs next to other LAN API integrations such as govee2mqtt.
 
 ## Important Notes
 

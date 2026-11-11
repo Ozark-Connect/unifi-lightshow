@@ -10,6 +10,7 @@ from config import Config
 from canvas import Canvas
 from ssh_transport import SSHTransport
 from openrgb_output import OpenRGBOutput
+from govee_output import GoveeOutput
 from frame_coalescer import FrameCoalescer
 from effects import EffectEngine
 from http_api import create_app
@@ -49,6 +50,12 @@ async def main():
             log.warning("OpenRGB connect failed, continuing without it: %s", e)
             openrgb = None
 
+    # Set up Govee output if configured
+    govee = None
+    if config.govee:
+        govee = GoveeOutput(config)
+        await govee.start()
+
     # Port traffic from the switch daemons. Stats flow whether or not the
     # layer is enabled, so GET /traffic works and POST /traffic can turn it on.
     traffic = TrafficMonitor(config.traffic, {s.name: s.num_ports for s in config.switches})
@@ -56,7 +63,7 @@ async def main():
     log.info("Traffic layer: %s (mode %s)", "on" if config.traffic.enabled else "off", config.traffic.mode)
 
     # Set up frame coalescer and effects
-    coalescer = FrameCoalescer(transport, openrgb, config, traffic=traffic)
+    coalescer = FrameCoalescer(transport, openrgb, govee, config, traffic=traffic)
     effects = EffectEngine(coalescer, canvas, config)
 
     # Set up HTTP API + WLED emulation endpoints
@@ -69,9 +76,9 @@ async def main():
     log.info("HTTP API on :%d (includes WLED /json endpoints)", config.http_port)
 
     # WLED HTTP on port 80 for SignalRGB (binds to IoT VLAN IP only)
-    wled_site = web.TCPSite(runner, "192.168.64.220", 80)
+    wled_site = web.TCPSite(runner, "10.42.64.220", 80)
     await wled_site.start()
-    log.info("WLED HTTP on 192.168.64.220:80")
+    log.info("WLED HTTP on 10.42.64.220:80")
 
     # Graceful shutdown
     shutdown_event = asyncio.Event()
@@ -115,6 +122,9 @@ async def main():
     await transport.close_all()
     if openrgb:
         await openrgb.close()
+    if govee:
+        await coalescer.release_govee()
+        govee.close()
     log.info("Shutdown complete")
 
 
