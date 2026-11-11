@@ -104,6 +104,8 @@ Copy `coordinator/switches.example.json` to `coordinator/switches.json` and edit
 
 `switch_refresh` is the number of seconds between forced resends of the current frame to the switches. A static frame such as `off` is otherwise sent once. If that packet is lost, or etherlightd repaints its default colors (for example, after a firmware upgrade reboots the switch), the switch keeps the wrong colors. 0 disables the resend.
 
+`wled_bind_ip` and `wled_bind_port` set where the WLED HTTP endpoints listen for SignalRGB, which expects port 80. If another service already holds port 80 on the host (a reverse proxy, for example), bind to one interface's address instead of `0.0.0.0`. The WLED UDP stream always listens on 21324.
+
 ### 2. Build the switch daemon
 
 The on-switch daemon must be cross-compiled for MIPS soft-float (the switch's CPU architecture). Make sure this matches your particular Etherlighting switch's architecture. The research notes may be helpful in figuring that out if you're unsure.

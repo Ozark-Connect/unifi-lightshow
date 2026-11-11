@@ -75,10 +75,14 @@ async def main():
     await site.start()
     log.info("HTTP API on :%d (includes WLED /json endpoints)", config.http_port)
 
-    # WLED HTTP on port 80 for SignalRGB (binds to IoT VLAN IP only)
-    wled_site = web.TCPSite(runner, "10.42.64.220", 80)
-    await wled_site.start()
-    log.info("WLED HTTP on 10.42.64.220:80")
+    # WLED HTTP for SignalRGB, which expects port 80. Set wled_bind_ip to one
+    # interface when something else holds port 80 on the host.
+    if config.wled_bind_port == config.http_port:
+        log.info("WLED HTTP served by the HTTP API on :%d", config.http_port)
+    else:
+        wled_site = web.TCPSite(runner, config.wled_bind_ip, config.wled_bind_port)
+        await wled_site.start()
+        log.info("WLED HTTP on %s:%d", config.wled_bind_ip, config.wled_bind_port)
 
     # Graceful shutdown
     shutdown_event = asyncio.Event()

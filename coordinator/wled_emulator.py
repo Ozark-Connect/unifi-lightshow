@@ -61,6 +61,14 @@ def _build_segments(config: Config) -> list[dict]:
     return segments
 
 
+def _local_ip(request: web.Request, config: Config) -> str:
+    """The address the client reached us on, so it is right for any bind (0.0.0.0 too)."""
+    sockname = request.transport.get_extra_info("sockname") if request.transport else None
+    if sockname:
+        return sockname[0]
+    return config.wled_bind_ip
+
+
 def create_wled_routes(app: web.Application, coalescer: FrameCoalescer, config: Config):
     """Add WLED HTTP endpoints to the existing aiohttp app."""
 
@@ -105,7 +113,7 @@ def create_wled_routes(app: web.Application, coalescer: FrameCoalescer, config: 
             "brand": "WLED",
             "product": "Etherlighting",
             "mac": "aabbccddeeff",
-            "ip": "10.42.64.220",
+            "ip": _local_ip(request, config),
         })
 
     async def json_state(request: web.Request) -> web.Response:
