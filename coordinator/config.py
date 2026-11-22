@@ -89,6 +89,11 @@ class Config:
     govee_off_resend: float = 3.0
     govee_claim_hold: float = 10.0
     govee_presence_hold: float = 90.0
+    # The SignalRGB PC. While it answers ping, the coordinator leaves the
+    # Govee lights alone. None disables the ping.
+    govee_signalrgb_host: str | None = None
+    govee_ping_interval: float = 0.25
+    govee_ping_absent_after: float = 5.0
     http_port: int = 9199
     udp_port: int = 9200
     max_fps: float = 10.0
@@ -221,6 +226,9 @@ class Config:
             self.govee_claim_hold = data["govee_claim_hold"]
         if "govee_presence_hold" in data:
             self.govee_presence_hold = data["govee_presence_hold"]
+        for key in ("govee_signalrgb_host", "govee_ping_interval", "govee_ping_absent_after"):
+            if key in data:
+                setattr(self, key, data[key])
 
         if "http_port" in data:
             self.http_port = data["http_port"]
