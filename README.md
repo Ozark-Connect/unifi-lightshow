@@ -306,8 +306,11 @@ The coordinator decides who owns the lights on every frame:
 | SignalRGB streaming to the coordinator | Movie flag | Coordinator does to the Govee lights |
 |---|---|---|
 | yes | any | Nothing. SignalRGB owns them. |
+| no, but a WLED HTTP request arrived in the last `govee_claim_hold` seconds | any | Nothing. SignalRGB is starting up and owns them. |
 | no | on | Turns them on and streams the current effect. |
 | no | off | Turns them off, and re-sends off every `govee_off_resend` seconds. |
+
+SignalRGB makes a WLED HTTP request (`GET /json/` or `POST /json/state/`) 2 to 6 seconds before its first UDP frame arrives, and its Govee addon drives the lights in that gap. The coordinator yields on that first request, so the two senders do not alternate frames on the lights. If no UDP frame follows within `govee_claim_hold` seconds, the coordinator takes the lights back. A request that arrives while SignalRGB already streams makes no claim, so the handback when SignalRGB exits still takes one `udp_timeout`.
 
 The `govee.state` field in `/health` shows the result: `yielded`, `streaming`, or `off`. It is `null` for one `udp_timeout` after startup. During that window the coordinator does not touch the lights, so a restart while SignalRGB is streaming does not switch them off.
 
@@ -366,7 +369,8 @@ automation:
     }
   ],
   "govee_keepalive": 1.0,
-  "govee_off_resend": 3.0
+  "govee_off_resend": 3.0,
+  "govee_claim_hold": 10.0
 }
 ```
 
@@ -381,6 +385,7 @@ automation:
 | `direction` | `ccw` | Loop only. Travel direction as seen facing the device. `ccw` runs left to right along the bottom. |
 | `govee_keepalive` | 1.0 | Seconds between frame resends while streaming. Govee lights leave streaming mode when frames stop. |
 | `govee_off_resend` | 3.0 | Seconds between off commands while holding the lights off. Govee lights can power themselves back on (for example, when SignalRGB's addon leaves streaming mode on exit), so a short interval keeps any flash brief. 0 disables the resend. |
+| `govee_claim_hold` | 10.0 | Seconds the coordinator yields the lights after a WLED HTTP request while SignalRGB is not streaming. Covers the gap before SignalRGB's first UDP frame. Any client that reads the WLED API triggers it, not only SignalRGB. 0 disables it. |
 
 To find a device's segment order, light one segment at a time and note where it appears.
 

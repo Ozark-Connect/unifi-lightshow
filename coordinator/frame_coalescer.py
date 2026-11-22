@@ -62,6 +62,7 @@ class FrameCoalescer:
         self._govee_state: str | None = None
         self._govee_last_send = 0.0
         self._govee_last_frames: dict[str, list[tuple[int, int, int, int]]] = {}
+        self._signalrgb_claim_until = 0.0
 
         self._brightness: int = config.default_brightness
         self._dirty = False
@@ -111,6 +112,23 @@ class FrameCoalescer:
             log.info("Govee movie flag: %s", active)
         self._govee_movie = active
 
+    def note_signalrgb_contact(self):
+        """SignalRGB made a WLED HTTP request: yield the Govee lights before its UDP starts.
+
+        SignalRGB's Govee addon starts streaming to the lights before its
+        first WLED UDP frame reaches us, 2-6 s after its first WLED HTTP
+        request. Waiting for UDP leaves both senders driving the lights in
+        that gap, which strobes. A request that arrives while UDP is already
+        active (the periodic poll, or the POST it sends on exit) claims
+        nothing, so the handback on exit is not delayed.
+        """
+        hold = self._config.govee_claim_hold
+        if hold <= 0 or self._udp_active():
+            return
+        if time.monotonic() >= self._signalrgb_claim_until:
+            log.info("SignalRGB contact: yielding Govee for %.0fs", hold)
+        self._signalrgb_claim_until = time.monotonic() + hold
+
     def mark_dirty(self):
         """Recompute the output on the next tick, e.g. when traffic changed."""
         self._dirty = True
@@ -153,7 +171,7 @@ class FrameCoalescer:
         if now - self._start_time < self._config.udp_timeout:
             return
 
-        if self._udp_active():
+        if self._udp_active() or now < self._signalrgb_claim_until:
             want = GOVEE_YIELDED
         elif self._govee_movie:
             want = GOVEE_STREAMING

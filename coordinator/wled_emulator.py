@@ -77,6 +77,7 @@ def create_wled_routes(app: web.Application, coalescer: FrameCoalescer, config: 
 
     async def json_info(request: web.Request) -> web.Response:
         """WLED /json/info endpoint — tells SignalRGB about our LEDs."""
+        coalescer.note_signalrgb_contact()
         return web.json_response({
             "ver": "0.14.0",
             "vid": 2400000,
@@ -118,6 +119,7 @@ def create_wled_routes(app: web.Application, coalescer: FrameCoalescer, config: 
 
     async def json_state(request: web.Request) -> web.Response:
         """WLED /json/state endpoint."""
+        coalescer.note_signalrgb_contact()
         if request.method == "POST":
             try:
                 body = await request.json()
