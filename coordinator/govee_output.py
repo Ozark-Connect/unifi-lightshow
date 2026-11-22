@@ -80,26 +80,31 @@ class GoveeOutput:
         Between power-on and streaming mode the device shows its stored
         color at its stored brightness, which reads as a bright flash. With
         govee_power_on_brightness set, the device brightness drops to that
-        value before power-on and returns to 100 once streaming starts.
+        value before power-on and returns to 100 just before streaming mode.
         Streamed frames are scaled by the device brightness, so it must end
-        at 100, or both the effect and SignalRGB's stream stay dim.
+        at 100, or both the effect and SignalRGB's stream stay dim. The
+        device ignores brightness while streaming (2026-11-21: a 100 sent
+        after razer-on left the stream at 5%), so the 100 goes first, with
+        razer-on right behind it.
         """
         dim = self._config.govee_power_on_brightness
         if dim:
+            # A device left streaming (coordinator restart) must leave
+            # streaming mode to accept brightness.
+            for dev in self._devices.values():
+                self._send(dev, {"cmd": "razer", "data": {"pt": RAZER_OFF}})
+            await asyncio.sleep(0.1)
             self._brightness_all(dim)
             await asyncio.sleep(0.1)
         for dev in self._devices.values():
             self._send(dev, {"cmd": "turn", "data": {"value": 1}})
         await asyncio.sleep(0.3)
+        if dim:
+            self._brightness_all(100)
         for _ in range(2):
             for dev in self._devices.values():
                 self._send(dev, {"cmd": "razer", "data": {"pt": RAZER_ON}})
             await asyncio.sleep(0.1)
-        if dim:
-            self._brightness_all(100)
-            await asyncio.sleep(0.1)
-            for dev in self._devices.values():
-                self._send(dev, {"cmd": "razer", "data": {"pt": RAZER_ON}})
         log.info("Govee activated")
 
     async def deactivate(self):
