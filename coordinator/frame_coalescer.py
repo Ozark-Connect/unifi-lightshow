@@ -68,6 +68,7 @@ class FrameCoalescer:
         self._signalrgb_streamed = False  # a UDP frame arrived since the last exit
         self._signalrgb_exited = False    # the exit POST arrived, no new session yet
         self._signalrgb_dropped_logged = False
+        self.ping_presence = None  # PingPresence for the SignalRGB PC, set by main
 
         self._brightness: int = config.default_brightness
         self._dirty = False
@@ -160,6 +161,10 @@ class FrameCoalescer:
             self._signalrgb_streamed = True
             self._signalrgb_dropped_logged = False
 
+    def signalrgb_session_active(self) -> bool:
+        """SignalRGB is streaming, or held through a drop: the PC is known to be on."""
+        return self._udp_active() or self._signalrgb_present(time.monotonic())
+
     def _signalrgb_present(self, now: float) -> bool:
         """SignalRGB streamed this session, has not exited, and was heard from recently."""
         hold = self._config.govee_presence_hold
@@ -211,7 +216,11 @@ class FrameCoalescer:
         if now - self._start_time < self._config.udp_timeout:
             return
 
-        if self._udp_active() or now < self._signalrgb_claim_until:
+        if self.ping_presence is not None and self.ping_presence.present:
+            # The SignalRGB PC is on: its Govee addon may drive the lights
+            # at any moment, before any WLED traffic reaches us.
+            want = GOVEE_YIELDED
+        elif self._udp_active() or now < self._signalrgb_claim_until:
             want = GOVEE_YIELDED
         elif self._signalrgb_present(now):
             if not self._signalrgb_dropped_logged:

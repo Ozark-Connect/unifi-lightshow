@@ -15,6 +15,7 @@ from frame_coalescer import FrameCoalescer
 from effects import EffectEngine
 from http_api import create_app
 from traffic import TrafficMonitor
+from presence import PingPresence
 from udp_listener import start_udp_listener
 from wled_emulator import create_wled_routes, start_wled_udp
 
@@ -65,6 +66,12 @@ async def main():
     # Set up frame coalescer and effects
     coalescer = FrameCoalescer(transport, openrgb, govee, config, traffic=traffic)
     effects = EffectEngine(coalescer, canvas, config)
+    ping = None
+    if config.govee and config.govee_signalrgb_host:
+        ping = PingPresence(config.govee_signalrgb_host, config.govee_ping_interval,
+                            config.govee_ping_absent_after,
+                            known_on=coalescer.signalrgb_session_active)
+        coalescer.ping_presence = ping
 
     # Set up HTTP API + WLED emulation endpoints
     app = create_app(coalescer, effects, transport, config, traffic=traffic)
@@ -104,6 +111,9 @@ async def main():
     coalescer_task = asyncio.create_task(coalescer.run())
     udp_task = asyncio.create_task(start_udp_listener(coalescer, config))
     wled_task = asyncio.create_task(start_wled_udp(coalescer, config))
+    # Before the coalescer's first Govee tick (after one udp_timeout), so the
+    # first decision already knows whether the PC is on.
+    ping_task = asyncio.create_task(ping.run()) if ping else None
 
     log.info("Etherlighting Coordinator running — %d switches, %d total pixels",
              len(config.switches), config.total_ports)
@@ -115,10 +125,14 @@ async def main():
     coalescer_task.cancel()
     udp_task.cancel()
     wled_task.cancel()
+    tasks = [coalescer_task, udp_task, wled_task]
+    if ping_task:
+        ping_task.cancel()
+        tasks.append(ping_task)
     effects.stop()
 
     try:
-        await asyncio.gather(coalescer_task, udp_task, wled_task, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
     except asyncio.CancelledError:
         pass
 
