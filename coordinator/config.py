@@ -87,6 +87,7 @@ class Config:
     govee: list[GoveeDeviceConfig] = field(default_factory=list)
     govee_keepalive: float = 1.0
     govee_off_resend: float = 3.0
+    govee_claim_hold: float = 10.0
     http_port: int = 9199
     udp_port: int = 9200
     max_fps: float = 10.0
@@ -215,6 +216,8 @@ class Config:
             self.govee_keepalive = data["govee_keepalive"]
         if "govee_off_resend" in data:
             self.govee_off_resend = data["govee_off_resend"]
+        if "govee_claim_hold" in data:
+            self.govee_claim_hold = data["govee_claim_hold"]
 
         if "http_port" in data:
             self.http_port = data["http_port"]
