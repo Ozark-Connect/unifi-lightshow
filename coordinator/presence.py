@@ -36,8 +36,11 @@ class PingPresence:
         return time.monotonic() - self._last_reply < self._absent_after
 
     async def _ping(self) -> bool:
+        # Timeout = interval. With a 1 s timeout, each ping to a sleeping PC
+        # waits 1 s, so a wake is seen up to 1 s late (a 1 s strobe on
+        # 2026-11-21). iputils 20240905 accepts a fractional -W.
         proc = await asyncio.create_subprocess_exec(
-            "ping", "-c", "1", "-W", "1", self._host,
+            "ping", "-c", "1", "-W", f"{self._interval:g}", self._host,
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         return await proc.wait() == 0
 
