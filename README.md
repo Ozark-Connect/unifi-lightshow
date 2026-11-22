@@ -400,6 +400,7 @@ automation:
 | `govee_signalrgb_host` | none | IP or hostname of the SignalRGB PC. While it answers ping, the coordinator leaves the Govee lights alone. Unset disables the ping. |
 | `govee_ping_interval` | 0.1 | Seconds between pings while no SignalRGB session is active. Also the ping timeout, so a PC that wakes is seen within one interval. Keep it above the LAN round-trip time. |
 | `govee_ping_absent_after` | 5.0 | Seconds without a ping reply before the PC counts as off. |
+| `govee_power_on_brightness` | 0 | Device brightness (1-100) while the coordinator powers the lights on. Between power-on and streaming mode a device shows its stored color at its stored brightness, which can flash. The coordinator sets this brightness before power-on and 100 once streaming starts, because streamed frames are scaled by the device brightness. 0 leaves the device brightness alone. |
 
 To find a device's segment order, light one segment at a time and note where it appears.
 

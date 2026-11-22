@@ -70,8 +70,24 @@ class GoveeOutput:
         except OSError as e:
             log.warning("Govee send to %s failed: %s", dev.name, e)
 
+    def _brightness_all(self, value: int):
+        for dev in self._devices.values():
+            self._send(dev, {"cmd": "brightness", "data": {"value": value}})
+
     async def activate(self):
-        """Power on and enter streaming mode (sent twice, as the SignalRGB addon does)."""
+        """Power on and enter streaming mode (sent twice, as the SignalRGB addon does).
+
+        Between power-on and streaming mode the device shows its stored
+        color at its stored brightness, which reads as a bright flash. With
+        govee_power_on_brightness set, the device brightness drops to that
+        value before power-on and returns to 100 once streaming starts.
+        Streamed frames are scaled by the device brightness, so it must end
+        at 100, or both the effect and SignalRGB's stream stay dim.
+        """
+        dim = self._config.govee_power_on_brightness
+        if dim:
+            self._brightness_all(dim)
+            await asyncio.sleep(0.1)
         for dev in self._devices.values():
             self._send(dev, {"cmd": "turn", "data": {"value": 1}})
         await asyncio.sleep(0.3)
@@ -79,6 +95,11 @@ class GoveeOutput:
             for dev in self._devices.values():
                 self._send(dev, {"cmd": "razer", "data": {"pt": RAZER_ON}})
             await asyncio.sleep(0.1)
+        if dim:
+            self._brightness_all(100)
+            await asyncio.sleep(0.1)
+            for dev in self._devices.values():
+                self._send(dev, {"cmd": "razer", "data": {"pt": RAZER_ON}})
         log.info("Govee activated")
 
     async def deactivate(self):
