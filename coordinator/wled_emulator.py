@@ -119,10 +119,11 @@ def create_wled_routes(app: web.Application, coalescer: FrameCoalescer, config: 
 
     async def json_state(request: web.Request) -> web.Response:
         """WLED /json/state endpoint."""
-        coalescer.note_signalrgb_contact()
+        coalescer.note_signalrgb_contact(post=request.method == "POST")
         if request.method == "POST":
             try:
                 body = await request.json()
+                log.info("WLED state POST: %s", body)
                 if "on" in body:
                     app["wled_on"] = body["on"]
                 if "bri" in body:

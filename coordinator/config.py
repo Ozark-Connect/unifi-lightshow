@@ -88,6 +88,7 @@ class Config:
     govee_keepalive: float = 1.0
     govee_off_resend: float = 3.0
     govee_claim_hold: float = 10.0
+    govee_presence_hold: float = 90.0
     http_port: int = 9199
     udp_port: int = 9200
     max_fps: float = 10.0
@@ -218,6 +219,8 @@ class Config:
             self.govee_off_resend = data["govee_off_resend"]
         if "govee_claim_hold" in data:
             self.govee_claim_hold = data["govee_claim_hold"]
+        if "govee_presence_hold" in data:
+            self.govee_presence_hold = data["govee_presence_hold"]
 
         if "http_port" in data:
             self.http_port = data["http_port"]

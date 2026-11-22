@@ -62,7 +62,12 @@ class FrameCoalescer:
         self._govee_state: str | None = None
         self._govee_last_send = 0.0
         self._govee_last_frames: dict[str, list[tuple[int, int, int, int]]] = {}
+        # SignalRGB presence, from its WLED HTTP requests and UDP frames
         self._signalrgb_claim_until = 0.0
+        self._signalrgb_last_contact = 0.0
+        self._signalrgb_streamed = False  # a UDP frame arrived since the last exit
+        self._signalrgb_exited = False    # the exit POST arrived, no new session yet
+        self._signalrgb_dropped_logged = False
 
         self._brightness: int = config.default_brightness
         self._dirty = False
@@ -112,22 +117,57 @@ class FrameCoalescer:
             log.info("Govee movie flag: %s", active)
         self._govee_movie = active
 
-    def note_signalrgb_contact(self):
-        """SignalRGB made a WLED HTTP request: yield the Govee lights before its UDP starts.
+    def note_signalrgb_contact(self, post: bool = False):
+        """SignalRGB made a WLED HTTP request. Track whether it is running.
 
-        SignalRGB's Govee addon starts streaming to the lights before its
-        first WLED UDP frame reaches us, 2-6 s after its first WLED HTTP
-        request. Waiting for UDP leaves both senders driving the lights in
-        that gap, which strobes. A request that arrives while UDP is already
-        active (the periodic poll, or the POST it sends on exit) claims
-        nothing, so the handback on exit is not delayed.
+        SignalRGB's Govee addon drives the lights directly, so the
+        coordinator only sees SignalRGB through its WLED traffic. Two gaps
+        in that traffic leave both senders driving the lights, which strobes:
+
+        - Startup: the first UDP frame arrives 2-6 s after the first HTTP
+          request. A request while UDP is idle claims the lights for
+          govee_claim_hold seconds.
+        - Stream drop: the UDP stream can stop for 10-120 s while SignalRGB
+          keeps running and polling. On exit SignalRGB sends POST
+          /json/state 0-5 s before its stream stops; a drop sends nothing.
+          Without that POST, the coordinator keeps yielding until SignalRGB
+          is silent for govee_presence_hold seconds.
+
+        A POST while UDP is active is taken as the exit. Any other request
+        starts a new session.
         """
+        now = time.monotonic()
+        if post and self._udp_active():
+            if not self._signalrgb_exited:
+                log.info("SignalRGB exit request: releasing Govee when its stream stops")
+            self._signalrgb_exited = True
+            self._signalrgb_streamed = False
+            return
+        self._signalrgb_exited = False
+        self._signalrgb_last_contact = now
         hold = self._config.govee_claim_hold
         if hold <= 0 or self._udp_active():
             return
-        if time.monotonic() >= self._signalrgb_claim_until:
+        if now >= self._signalrgb_claim_until:
             log.info("SignalRGB contact: yielding Govee for %.0fs", hold)
-        self._signalrgb_claim_until = time.monotonic() + hold
+        self._signalrgb_claim_until = now + hold
+
+    def _note_signalrgb_frame(self):
+        self._udp_last_seen = time.monotonic()
+        self._signalrgb_last_contact = self._udp_last_seen
+        self._signalrgb_claim_until = 0.0  # the stream it waited for has started
+        if not self._signalrgb_exited:
+            self._signalrgb_streamed = True
+            self._signalrgb_dropped_logged = False
+
+    def _signalrgb_present(self, now: float) -> bool:
+        """SignalRGB streamed this session, has not exited, and was heard from recently."""
+        hold = self._config.govee_presence_hold
+        if self._signalrgb_streamed and now - self._signalrgb_last_contact >= hold:
+            # Silent too long: the session is over, so a later stray request
+            # gets only the startup claim, not this hold.
+            self._signalrgb_streamed = False
+        return hold > 0 and self._signalrgb_streamed and not self._signalrgb_exited
 
     def mark_dirty(self):
         """Recompute the output on the next tick, e.g. when traffic changed."""
@@ -173,6 +213,12 @@ class FrameCoalescer:
 
         if self._udp_active() or now < self._signalrgb_claim_until:
             want = GOVEE_YIELDED
+        elif self._signalrgb_present(now):
+            if not self._signalrgb_dropped_logged:
+                log.info("SignalRGB stream stopped without exit: keeping Govee yielded "
+                         "until SignalRGB is silent for %.0fs", self._config.govee_presence_hold)
+                self._signalrgb_dropped_logged = True
+            want = GOVEE_YIELDED
         elif self._govee_movie:
             want = GOVEE_STREAMING
         else:
@@ -215,7 +261,7 @@ class FrameCoalescer:
             return
 
         if source == SOURCE_UDP:
-            self._udp_last_seen = time.monotonic()
+            self._note_signalrgb_frame()
 
         if device_name in self._frames:
             count = self._get_device_led_count(device_name)
@@ -235,7 +281,7 @@ class FrameCoalescer:
             return
 
         if source == SOURCE_UDP:
-            self._udp_last_seen = time.monotonic()
+            self._note_signalrgb_frame()
 
         for name, colors in frames.items():
             if name in self._frames:
