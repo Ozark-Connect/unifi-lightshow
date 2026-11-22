@@ -307,10 +307,16 @@ The coordinator decides who owns the lights on every frame:
 |---|---|---|
 | yes | any | Nothing. SignalRGB owns them. |
 | no, but a WLED HTTP request arrived in the last `govee_claim_hold` seconds | any | Nothing. SignalRGB is starting up and owns them. |
+| no, but it streamed, sent no exit request, and was heard from in the last `govee_presence_hold` seconds | any | Nothing. SignalRGB is still running and owns them. |
 | no | on | Turns them on and streams the current effect. |
 | no | off | Turns them off, and re-sends off every `govee_off_resend` seconds. |
 
-SignalRGB makes a WLED HTTP request (`GET /json/` or `POST /json/state/`) 2 to 6 seconds before its first UDP frame arrives, and its Govee addon drives the lights in that gap. The coordinator yields on that first request, so the two senders do not alternate frames on the lights. If no UDP frame follows within `govee_claim_hold` seconds, the coordinator takes the lights back. A request that arrives while SignalRGB already streams makes no claim, so the handback when SignalRGB exits still takes one `udp_timeout`.
+SignalRGB's Govee addon drives the lights directly, so the coordinator only sees SignalRGB through its WLED traffic. Two gaps in that traffic would leave both senders driving the lights, which strobes:
+
+- **Startup.** SignalRGB makes a WLED HTTP request (`GET /json/` or `GET /json/info/`) 2 to 6 seconds before its first UDP frame arrives. The coordinator yields on that first request. If no UDP frame follows within `govee_claim_hold` seconds, it takes the lights back.
+- **Stream drop.** SignalRGB can stop its UDP stream for 10 to 120 seconds while it keeps running and polling `GET /json/` about once a minute. On exit, SignalRGB sends `POST /json/state/` 0 to 5 seconds before its stream stops. A drop sends nothing. Without that exit request, the coordinator keeps yielding until SignalRGB has sent nothing for `govee_presence_hold` seconds.
+
+After an exit request, the coordinator takes the lights back one `udp_timeout` after the stream stops. If SignalRGB stops without one (the PC sleeps or SignalRGB crashes), it takes them back `govee_presence_hold` seconds after the last request or frame.
 
 The `govee.state` field in `/health` shows the result: `yielded`, `streaming`, or `off`. It is `null` for one `udp_timeout` after startup. During that window the coordinator does not touch the lights, so a restart while SignalRGB is streaming does not switch them off.
 
@@ -370,7 +376,8 @@ automation:
   ],
   "govee_keepalive": 1.0,
   "govee_off_resend": 3.0,
-  "govee_claim_hold": 10.0
+  "govee_claim_hold": 10.0,
+  "govee_presence_hold": 90.0
 }
 ```
 
@@ -386,6 +393,7 @@ automation:
 | `govee_keepalive` | 1.0 | Seconds between frame resends while streaming. Govee lights leave streaming mode when frames stop. |
 | `govee_off_resend` | 3.0 | Seconds between off commands while holding the lights off. Govee lights can power themselves back on (for example, when SignalRGB's addon leaves streaming mode on exit), so a short interval keeps any flash brief. 0 disables the resend. |
 | `govee_claim_hold` | 10.0 | Seconds the coordinator yields the lights after a WLED HTTP request while SignalRGB is not streaming. Covers the gap before SignalRGB's first UDP frame. Any client that reads the WLED API triggers it, not only SignalRGB. 0 disables it. |
+| `govee_presence_hold` | 90.0 | Seconds the coordinator keeps yielding after SignalRGB's stream stops without an exit request, counted from SignalRGB's last WLED request or frame. SignalRGB polls about once a minute, so keep it above 60. 0 disables it: the lights then go back one `udp_timeout` after any stream stop. |
 
 To find a device's segment order, light one segment at a time and note where it appears.
 
