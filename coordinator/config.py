@@ -92,7 +92,7 @@ class Config:
     # The SignalRGB PC. While it answers ping, the coordinator leaves the
     # Govee lights alone. None disables the ping.
     govee_signalrgb_host: str | None = None
-    govee_ping_interval: float = 0.25
+    govee_ping_interval: float = 0.1
     govee_ping_absent_after: float = 5.0
     http_port: int = 9199
     udp_port: int = 9200

@@ -398,7 +398,7 @@ automation:
 | `govee_claim_hold` | 10.0 | Seconds the coordinator yields the lights after a WLED HTTP request while SignalRGB is not streaming. Covers the gap before SignalRGB's first UDP frame. Any client that reads the WLED API triggers it, not only SignalRGB. 0 disables it. |
 | `govee_presence_hold` | 90.0 | Seconds the coordinator keeps yielding after SignalRGB's stream stops without an exit request, counted from SignalRGB's last WLED request or frame. SignalRGB polls about once a minute, so keep it above 60. 0 disables it: the lights then go back one `udp_timeout` after any stream stop. |
 | `govee_signalrgb_host` | none | IP or hostname of the SignalRGB PC. While it answers ping, the coordinator leaves the Govee lights alone. Unset disables the ping. |
-| `govee_ping_interval` | 0.25 | Seconds between pings while no SignalRGB session is active. |
+| `govee_ping_interval` | 0.1 | Seconds between pings while no SignalRGB session is active. Also the ping timeout, so a PC that wakes is seen within one interval. Keep it above the LAN round-trip time. |
 | `govee_ping_absent_after` | 5.0 | Seconds without a ping reply before the PC counts as off. |
 
 To find a device's segment order, light one segment at a time and note where it appears.
