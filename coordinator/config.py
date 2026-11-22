@@ -94,6 +94,10 @@ class Config:
     govee_signalrgb_host: str | None = None
     govee_ping_interval: float = 0.1
     govee_ping_absent_after: float = 5.0
+    # Optional frame watch: any Ethernet frame from this MAC on this
+    # interface counts as the PC being up. Needs a NIC on the PC's LAN.
+    govee_signalrgb_mac: str | None = None
+    govee_signalrgb_iface: str | None = None
     http_port: int = 9199
     udp_port: int = 9200
     max_fps: float = 10.0
@@ -226,7 +230,8 @@ class Config:
             self.govee_claim_hold = data["govee_claim_hold"]
         if "govee_presence_hold" in data:
             self.govee_presence_hold = data["govee_presence_hold"]
-        for key in ("govee_signalrgb_host", "govee_ping_interval", "govee_ping_absent_after"):
+        for key in ("govee_signalrgb_host", "govee_ping_interval", "govee_ping_absent_after",
+                    "govee_signalrgb_mac", "govee_signalrgb_iface"):
             if key in data:
                 setattr(self, key, data[key])
 

@@ -70,7 +70,9 @@ async def main():
     if config.govee and config.govee_signalrgb_host:
         ping = PingPresence(config.govee_signalrgb_host, config.govee_ping_interval,
                             config.govee_ping_absent_after,
-                            known_on=coalescer.signalrgb_session_active)
+                            known_on=coalescer.signalrgb_session_active,
+                            mac=config.govee_signalrgb_mac,
+                            iface=config.govee_signalrgb_iface)
         coalescer.ping_presence = ping
 
     # Set up HTTP API + WLED emulation endpoints
